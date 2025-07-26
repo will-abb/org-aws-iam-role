@@ -5,7 +5,6 @@
 (require 'url-util)
 (require 'async)
 (require 'promise)
-(require 'log4e)
 
 (defvar aws-iam-role-viewer-profile nil
   "Default AWS CLI profile to use for IAM role operations.
@@ -17,22 +16,6 @@ If nil, uses default profile or environment credentials.")
 (defvar aws-iam-role-viewer-fullscreen t
   "If non-nil, show the IAM role buffer in fullscreen.")
 
-(defvar aws-iam-role-viewer-log-level 'debug
-  "The logging level for the IAM Role Viewer.
-Set this to 'debug, 'info, 'warn, 'error, or 'fatal.
-Default is 'debug.")
-
-(log4e:deflogger "aws-iam-role-viewer" "%t [%l] %m" "%Y-%m-%d %H:%M:%S")
-
-(defun aws-iam-role-viewer--init-logger ()
-  "Initialize the package logger based on `aws-iam-role-viewer-log-level`."
-  (aws-iam-role-viewer--log-enable-logging)
-  (aws-iam-role-viewer--log-enable-messaging)
-  (aws-iam-role-viewer--log-set-level aws-iam-role-viewer-log-level 'fatal))
-
-(aws-iam-role-viewer--init-logger)
-
-
 ;;;###autoload
 (defun aws-iam-role-viewer-view-details ()
   "Prompt for an IAM role and display its details in an Org-mode buffer."
@@ -41,7 +24,6 @@ Default is 'debug.")
   (let* ((name (completing-read "IAM Role: " (aws-iam-role-viewer-list-names)))
          (role (aws-iam-role-viewer-construct
                 (aws-iam-role-viewer-get-full name))))
-    (aws-iam-role-viewer--log-info "Viewing details for role: %s" name)
     (aws-iam-role-viewer-show-buffer role)))
 
 ;;;###autoload
@@ -67,9 +49,7 @@ Default is 'debug.")
   "Ensure the user is authenticated with AWS. Raise error if not."
   (let* ((cmd (format "aws sts get-caller-identity --output json%s"
                       (aws-iam-role-viewer--cli-profile-arg)))
-         (exit-code (progn
-                      (aws-iam-role-viewer--log-debug "Executing auth check: %s" cmd)
-                      (shell-command cmd nil nil))))
+         (exit-code (shell-command cmd nil nil)))
     (unless (eq exit-code 0)
       (user-error "AWS CLI not authenticated: please check your credentials or AWS_PROFILE"))))
 
@@ -145,7 +125,6 @@ DOCUMENT-JSON is the raw JSON string from `get-policy-version`."
                      (if (stringp document-string)
                          (json-parse-string (url-unhex-string document-string) :object-type 'alist)
                        document-string))))
-    (aws-iam-role-viewer--log-debug "Successfully parsed document for %s" (alist-get 'Arn metadata))
     (make-aws-iam-policy
      :name (alist-get 'PolicyName metadata)
      :policy-type policy-type
@@ -170,7 +149,6 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
 
     ;; Step 2: From metadata, fetch the policy document.
     (then (lambda (metadata-json)
-            (aws-iam-role-viewer--log-debug "Parsing metadata JSON for %s" policy-arn)
             (let* ((metadata (alist-get 'Policy (json-parse-string metadata-json :object-type 'alist)))
                    (version-id (alist-get 'DefaultVersionId metadata)))
               (if version-id
@@ -178,9 +156,7 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
                                 (lambda (document-json)
                                   ;; Pass both results to the next step
                                   (list metadata document-json)))
-                (progn
-                  (aws-iam-role-viewer--log-error "Could not get version-id for ARN: %s" policy-arn)
-                  (promise-resolve nil)))))) ; Resolve with nil on failure
+                (promise-resolve nil))))) ; Resolve with nil on failure
 
     ;; Step 3: Construct the final struct from the resolved data.
     (then (lambda (results)
@@ -190,14 +166,7 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
                 (aws-iam-policy--construct-from-data metadata policy-type document-json)))))
 
     ;; Step 4: Catch any failure in the chain.
-    (catcha
-     (progn
-       (aws-iam-role-viewer--log-error "--- PROMISE CHAIN FAILED ---")
-       (aws-iam-role-viewer--log-error "ARN: %s" policy-arn)
-       (aws-iam-role-viewer--log-error "REASON TYPE: %s" (type-of reason))
-       (aws-iam-role-viewer--log-error "REASON (safe): %s" (ignore-errors (format "%S" reason)))
-       (aws-iam-role-viewer--log-error "--- END OF FAILURE REPORT ---"))
-     nil)))
+    (catcha nil)))
 
 (defun aws-iam-inline-policy--construct-from-json (policy-name json)
   "Construct an inline `aws-iam-policy' struct from its JSON representation.
@@ -239,9 +208,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
                       (if marker
                           (format " --starting-token %s" (shell-quote-argument marker))
                         "")))
-         (json (progn
-                 (aws-iam-role-viewer--log-debug "Executing command: %s" cmd)
-                 (shell-command-to-string cmd)))
+         (json (shell-command-to-string cmd))
          (parsed (json-parse-string json :object-type 'alist :array-type 'list)))
     (cons (alist-get 'Roles parsed) (alist-get 'Marker parsed))))
 
@@ -264,9 +231,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (let* ((cmd (format "aws iam get-role --role-name %s --output json%s"
                       (shell-quote-argument role-name)
                       (aws-iam-role-viewer--cli-profile-arg)))
-         (json (progn
-                 (aws-iam-role-viewer--log-debug "Executing command: %s" cmd)
-                 (shell-command-to-string cmd)))
+         (json (shell-command-to-string cmd))
          (parsed (alist-get 'Role (json-parse-string json :object-type 'alist :array-type 'list))))
     parsed))
 
@@ -294,9 +259,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (let* ((cmd (format "aws iam list-attached-role-policies --role-name %s --output json%s"
                       (shell-quote-argument role-name)
                       (aws-iam-role-viewer--cli-profile-arg)))
-         (json (progn
-                 (aws-iam-role-viewer--log-debug "Executing command: %s" cmd)
-                 (shell-command-to-string cmd)))
+         (json (shell-command-to-string cmd))
          (parsed (json-parse-string json :object-type 'alist :array-type 'list)))
     (alist-get 'AttachedPolicies parsed)))
 
@@ -305,9 +268,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (let* ((cmd (format "aws iam list-role-policies --role-name %s --output json%s"
                       (shell-quote-argument role-name)
                       (aws-iam-role-viewer--cli-profile-arg)))
-         (json (progn
-                 (aws-iam-role-viewer--log-debug "Executing command: %s" cmd)
-                 (shell-command-to-string cmd)))
+         (json (shell-command-to-string cmd))
          (parsed (json-parse-string json :object-type 'alist :array-type 'list)))
     (alist-get 'PolicyNames parsed)))
 
@@ -343,7 +304,6 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
 
 (defun aws-iam-role-viewer-insert-trust-policy (role)
   "Insert the trust policy section into the buffer."
-  (aws-iam-role-viewer--log-debug "--> ENTERING insert-trust-policy")
   (let ((trust-policy-json (json-encode (aws-iam-role-viewer-trust-policy role))))
     (insert "** Trust Policy\n")
     (insert "#+BEGIN_SRC json\n")
@@ -351,10 +311,8 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
       (insert trust-policy-json)
       (condition-case e
           (json-pretty-print start (point))
-        (error
-         (aws-iam-role-viewer--log-warn "Could not pretty-print trust policy JSON: %S" e))))
-    (insert "\n#+END_SRC\n"))
-  (aws-iam-role-viewer--log-debug "<-- LEAVING insert-trust-policy"))
+        (error nil)))
+    (insert "\n#+END_SRC\n")))
 
 (defun aws-iam-role-viewer--format-policy-type (policy-type-symbol)
   "Format the policy type symbol into a human-readable string."
@@ -366,54 +324,33 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
 
 (defun aws-iam-role-viewer--insert-policy-struct-details (policy)
   "Insert the details of a pre-fetched `aws-iam-policy' struct into the buffer."
-  (aws-iam-role-viewer--log-debug "--> ENTERING insert-policy-struct-details for: %s" (aws-iam-policy-name policy))
   (let ((doc-json (json-encode (aws-iam-policy-document policy))))
-    (aws-iam-role-viewer--log-debug "     ... inserting header")
     (insert (format "*** %s\n" (aws-iam-policy-name policy)))
-    (aws-iam-role-viewer--log-debug "     ... inserting props block")
     (insert ":PROPERTIES:\n")
-    (aws-iam-role-viewer--log-debug "     ... inserting AWSPolicyType")
     (insert (format ":AWSPolicyType: %s\n" (aws-iam-role-viewer--format-policy-type (aws-iam-policy-policy-type policy))))
-    (aws-iam-role-viewer--log-debug "     ... inserting ID")
     (insert (format ":ID: %s\n" (or (aws-iam-policy-id policy) "nil")))
-    (aws-iam-role-viewer--log-debug "     ... inserting ARN")
     (insert (format ":ARN: %s\n" (or (aws-iam-policy-arn policy) "nil")))
-    (aws-iam-role-viewer--log-debug "     ... inserting Path")
     (insert (format ":Path: %s\n" (or (aws-iam-policy-path policy) "nil")))
-    (aws-iam-role-viewer--log-debug "     ... inserting Description")
     (insert (format ":Description: %s\n" (or (aws-iam-policy-description policy) "nil")))
-    (aws-iam-role-viewer--log-debug "     ... inserting Created")
     (insert (format ":Created: %s\n" (or (aws-iam-policy-create-date policy) "nil")))
-    (aws-iam-role-viewer--log-debug "     ... inserting Updated")
     (insert (format ":Updated: %s\n" (or (aws-iam-policy-update-date policy) "nil")))
-    (aws-iam-role-viewer--log-debug "     ... inserting AttachmentCount")
     (insert (format ":AttachmentCount: %s\n" (or (aws-iam-policy-attachment-count policy) "nil")))
-    (aws-iam-role-viewer--log-debug "     ... inserting DefaultVersion")
     (insert (format ":DefaultVersion: %s\n" (or (aws-iam-policy-default-version-id policy) "nil")))
-    (aws-iam-role-viewer--log-debug "     ... inserting END")
     (insert ":END:\n")
-    (aws-iam-role-viewer--log-debug "     ... inserting doc header")
     (insert "Policy Document:\n")
     (insert "#+BEGIN_SRC json\n")
     (let ((start (point)))
-      (aws-iam-role-viewer--log-debug "     ... inserting doc json")
       (insert doc-json)
-      (aws-iam-role-viewer--log-debug "     ... pretty-printing json")
       (condition-case e
           (json-pretty-print start (point))
-        (error
-         (aws-iam-role-viewer--log-warn "Could not pretty-print policy document JSON: %S" e))))
-    (aws-iam-role-viewer--log-debug "     ... inserting end src")
-    (insert "\n#+END_SRC\n"))
-  (aws-iam-role-viewer--log-debug "<-- LEAVING insert-policy-struct-details for: %s" (aws-iam-policy-name policy)))
+        (error nil)))
+    (insert "\n#+END_SRC\n")))
 
 (defun aws-iam-role-viewer--insert-remaining-sections-and-finalize (role buf)
   "Insert remaining sync sections and finalize buffer display."
-  (aws-iam-role-viewer--log-debug "--> ENTERING insert-remaining-sections-and-finalize")
   (with-current-buffer buf
     (aws-iam-role-viewer-insert-trust-policy role))
-  (aws-iam-role-viewer-finalize-and-display-role-buffer buf)
-  (aws-iam-role-viewer--log-debug "<-- LEAVING insert-remaining-sections-and-finalize"))
+  (aws-iam-role-viewer-finalize-and-display-role-buffer buf))
 
 (defun aws-iam-role-viewer--get-all-policies-async (role)
   "Fetch all attached, inline, and boundary policies for ROLE.
@@ -453,18 +390,14 @@ to determine if the section header should be rendered."
     ;; 1. Render Permission Policies (AWS, Customer, Inline)
     (insert "** Permission Policies\n")
     (if permission-policies
-        (progn
-          (aws-iam-role-viewer--log-debug "Rendering %d permission policies." (length permission-policies))
-          (dolist (p permission-policies) (aws-iam-role-viewer--insert-policy-struct-details p)))
+        (dolist (p permission-policies) (aws-iam-role-viewer--insert-policy-struct-details p))
       (insert "nil\n"))
 
     ;; 2. Render Permissions Boundary Policy
     (when boundary-arn
       (insert "** Permissions Boundary Policy\n")
       (if boundary-policy
-          (progn
-            (aws-iam-role-viewer--log-debug "Rendering permissions boundary policy.")
-            (aws-iam-role-viewer--insert-policy-struct-details boundary-policy))
+          (aws-iam-role-viewer--insert-policy-struct-details boundary-policy)
         (insert "Failed to fetch permissions boundary policy.\n")))))
 
 (defun aws-iam-role-viewer-populate-role-buffer (role buf)
@@ -487,18 +420,13 @@ rendering of role information."
          policies-promise
          (lambda (all-policies-vector)
            (condition-case e
-               (progn
-                 (aws-iam-role-viewer--log-debug "Final promise callback entered for all policies.")
-                 (with-current-buffer buf
-                   ;; Insert the fetched policy sections.
-                   (aws-iam-role-viewer--insert-policies-section all-policies-vector boundary-arn)
-                   ;; Insert remaining synchronous sections and finalize the buffer.
-                   (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf)))
-             (error
-              (aws-iam-role-viewer--log-error "!!!!!! UNCAUGHT CRITICAL ERROR IN FINAL CALLBACK !!!!!!")
-              (aws-iam-role-viewer--log-error "Error: %S" e)))))
+               (with-current-buffer buf
+                 ;; Insert the fetched policy sections.
+                 (aws-iam-role-viewer--insert-policies-section all-policies-vector boundary-arn)
+                 ;; Insert remaining synchronous sections and finalize the buffer.
+                 (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf))
+             (error nil))))
       ;; Case where there are no policies of any kind.
-      (aws-iam-role-viewer--log-debug "No policies found for this role.")
       (with-current-buffer buf
         (insert "** Permission Policies\n")
         (insert "nil\n")
@@ -511,7 +439,6 @@ rendering of role information."
 
 (defun aws-iam-role-viewer-finalize-and-display-role-buffer (buf)
   "Set keybinds, mode, and display the buffer BUF."
-  (aws-iam-role-viewer--log-debug "--> ENTERING finalize-and-display-role-buffer")
   (with-current-buffer buf
     (local-set-key (kbd "C-c C-h") #'org-fold-hide-drawer-all)
     (local-set-key (kbd "C-c C-r") #'aws-iam-role-viewer-show-all-drawers)
@@ -523,8 +450,7 @@ rendering of role information."
   (let ((window (display-buffer buf '((display-buffer-pop-up-window)))))
     (when (and aws-iam-role-viewer-fullscreen (window-live-p window))
       (select-window window)
-      (delete-other-windows)))
-  (aws-iam-role-viewer--log-debug "<-- LEAVING finalize-and-display-role-buffer"))
+      (delete-other-windows))))
 
 (defun aws-iam-role-viewer-show-buffer (role)
   "Render IAM ROLE object and its policies in a new Org-mode buffer."
