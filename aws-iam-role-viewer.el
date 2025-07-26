@@ -1,4 +1,4 @@
-;;; iam-role-viewer.el --- IAM Role and Policy object browser -*- lexical-binding: t; -*-
+;;; aws-iam-role-viewer.el --- IAM Role and Policy object browser -*- lexical-binding: t; -*-
 
 (require 'cl-lib)
 (require 'json)
@@ -480,5 +480,5 @@ rendering of role information."
          (buf (get-buffer-create buf-name)))
     (aws-iam-role-viewer-populate-role-buffer role buf)))
 
-(provide 'iam-role-viewer)
-;;; iam-role-viewer.el ends here
+(provide 'aws-iam-role-viewer)
+;;; aws-iam-role-viewer.el ends here
