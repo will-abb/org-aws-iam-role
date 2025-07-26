@@ -50,12 +50,15 @@ If nil, uses default profile or environment credentials.")
   (let* ((cmd (format "aws sts get-caller-identity --output json%s"
                       (aws-iam-role-viewer--cli-profile-arg)))
          (exit-code (shell-command cmd nil nil)))
+    ;; A non-zero exit code from the AWS CLI indicates an error (e.g., bad credentials).
     (unless (eq exit-code 0)
       (user-error "AWS CLI not authenticated: please check your credentials or AWS_PROFILE"))))
 
 (defun aws-iam-format-tags (tags)
   "Format AWS tags from a list of alists into a single JSON string."
   (when tags
+    ;; AWS tags are a list of alists, e.g., '((Key . "k1") (Value . "v1")).
+    ;; We simplify this to a single alist '(( "k1" . "v1" )) for easier JSON encoding.
     (let ((simple-alist (mapcar (lambda (tag)
                                   (cons (alist-get 'Key tag)
                                         (alist-get 'Value tag)))
@@ -121,6 +124,7 @@ POLICY-TYPE is the type symbol (e.g., 'aws-managed).
 DOCUMENT-JSON is the raw JSON string from `get-policy-version`."
   (let* ((policy-version (alist-get 'PolicyVersion (json-parse-string document-json :object-type 'alist)))
          (document-string (alist-get 'Document policy-version))
+         ;; The policy document itself is a URL-encoded JSON string inside the parent JSON.
          (document (when document-string
                      (if (stringp document-string)
                          (json-parse-string (url-unhex-string document-string) :object-type 'alist)
@@ -156,7 +160,8 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
                                 (lambda (document-json)
                                   ;; Pass both results to the next step
                                   (list metadata document-json)))
-                (promise-resolve nil))))) ; Resolve with nil on failure
+                ;; Gracefully fail by resolving to nil if no version-id is found.
+                (promise-resolve nil)))))
 
     ;; Step 3: Construct the final struct from the resolved data.
     (then (lambda (results)
@@ -165,7 +170,7 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
                     (document-json (cadr results)))
                 (aws-iam-policy--construct-from-data metadata policy-type document-json)))))
 
-    ;; Step 4: Catch any failure in the chain.
+    ;; Step 4: Catch any promise rejection in the chain and resolve to nil.
     (catcha nil)))
 
 (defun aws-iam-inline-policy--construct-from-json (policy-name json)
@@ -174,6 +179,7 @@ POLICY-NAME is the name of the inline policy. JSON is the raw
 string from the `get-role-policy` AWS CLI command."
   (let* ((parsed (json-parse-string json :object-type 'alist :array-type 'list))
          (document (alist-get 'PolicyDocument parsed))
+         ;; The policy document is a URL-encoded JSON string inside the parent JSON.
          (decoded-doc (when document
                         (if (stringp document)
                             (json-parse-string (url-unhex-string document) :object-type 'alist :array-type 'list)
@@ -217,6 +223,8 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (let ((all-roles '())
         (marker nil)
         (first-run t))
+    ;; Loop until the AWS API returns no more pages (i.e., the marker is nil).
+    ;; The `first-run` flag ensures the loop runs at least once when marker starts as nil.
     (while (or first-run marker)
       (let* ((page-result (aws-iam-role-viewer--fetch-roles-page marker))
              (roles-on-page (car page-result))
@@ -237,6 +245,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
 
 (defun aws-iam-role-viewer-construct (obj)
   "Create an `aws-iam-role-viewer` struct from a full `get-role` object."
+  ;; PermissionsBoundary and RoleLastUsed can be nil, so we get them first.
   (let ((pb (alist-get 'PermissionsBoundary obj))
         (last-used (alist-get 'RoleLastUsed obj)))
     (make-aws-iam-role-viewer
@@ -277,6 +286,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (let ((customer '()) (aws '()))
     (dolist (p attached)
       (let ((arn (alist-get 'PolicyArn p)))
+        ;; AWS-managed policies have a standard, well-known ARN prefix.
         (if (string-prefix-p "arn:aws:iam::aws:policy/" arn)
             (push p aws)
           (push p customer))))
@@ -295,6 +305,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (insert (format ":Path: %s\n" (aws-iam-role-viewer-path role)))
   (insert (format ":Created: %s\n" (aws-iam-role-viewer-create-date role)))
   (insert (format ":MaxSessionDuration: %d\n" (aws-iam-role-viewer-max-session-duration role)))
+  ;; Use "nil" as a string for display if the actual value is nil.
   (insert (format ":Description: %s\n" (or (aws-iam-role-viewer-description role) "nil")))
   (insert (format ":PermissionsBoundaryArn: %s\n" (or (aws-iam-role-viewer-permissions-boundary-arn role) "nil")))
   (insert (format ":LastUsedDate: %s\n" (or (aws-iam-role-viewer-last-used-date role) "nil")))
@@ -309,6 +320,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
     (insert "#+BEGIN_SRC json\n")
     (let ((start (point)))
       (insert trust-policy-json)
+      ;; Don't let a JSON formatting error stop buffer creation.
       (condition-case e
           (json-pretty-print start (point))
         (error nil)))
@@ -373,6 +385,7 @@ are found."
          (boundary-promise (when boundary-arn (list (aws-iam-policy-from-arn-async boundary-arn 'permissions-boundary))))
          (inline-promises (mapcar (lambda (name) (aws-iam-inline-policy-from-name-async role-name name)) inline-policy-names))
          (all-promises (append aws-promises customer-promises boundary-promise inline-promises)))
+    ;; Only create a master promise if there are any child promises to run.
     (when all-promises
       (promise-all all-promises))))
 
@@ -382,8 +395,9 @@ ALL-POLICIES-VECTOR is the result from a `promise-all' call.
 BOUNDARY-ARN is the original ARN of the boundary policy, used
 to determine if the section header should be rendered."
   (let* ((policies-list (seq-into all-policies-vector 'list))
+         ;; Filter out any nil results from promises that may have failed gracefully.
          (valid-policies (cl-remove-if-not #'identity policies-list))
-         ;; Separate boundary policy from the rest
+         ;; Separate boundary policy from the rest for individual rendering.
          (boundary-policy (cl-find 'permissions-boundary valid-policies :key #'aws-iam-policy-policy-type))
          (permission-policies (cl-remove 'permissions-boundary valid-policies :key #'aws-iam-policy-policy-type)))
 
@@ -415,10 +429,12 @@ rendering of role information."
   ;; Asynchronously fetch all policies for the role.
   (let ((policies-promise (aws-iam-role-viewer--get-all-policies-async role))
         (boundary-arn (aws-iam-role-viewer-permissions-boundary-arn role)))
+    ;; If there are policies, wait for them and then render. Otherwise, render the empty state.
     (if policies-promise
         (promise-then
          policies-promise
          (lambda (all-policies-vector)
+           ;; Catch any error during rendering to prevent the callback from crashing Emacs.
            (condition-case e
                (with-current-buffer buf
                  ;; Insert the fetched policy sections.
@@ -447,7 +463,9 @@ rendering of role information."
     (if aws-iam-role-viewer-show-folded-by-default
         (org-overview)
       (org-fold-show-all)))
+  ;; Display in a pop-up window.
   (let ((window (display-buffer buf '((display-buffer-pop-up-window)))))
+    ;; If fullscreen is enabled, make this the only window.
     (when (and aws-iam-role-viewer-fullscreen (window-live-p window))
       (select-window window)
       (delete-other-windows))))
@@ -455,6 +473,7 @@ rendering of role information."
 (defun aws-iam-role-viewer-show-buffer (role)
   "Render IAM ROLE object and its policies in a new Org-mode buffer."
   (let* ((timestamp (format-time-string "%Y%m%d-%H%M%S"))
+         ;; Add a timestamp to the buffer name to ensure uniqueness for multiple views.
          (buf-name (format "*IAM Role: %s <%s>*"
                            (aws-iam-role-viewer-name role)
                            timestamp))
