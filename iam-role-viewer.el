@@ -99,6 +99,7 @@ Default is 'debug.")
 
 (cl-defstruct aws-iam-policy
   name
+  policy-type
   id
   arn
   path
@@ -133,7 +134,7 @@ Returns a promise that resolves with the raw JSON string."
          (start-func `(lambda () (shell-command-to-string ,cmd))))
     (promise:async-start start-func)))
 
-(defun aws-iam-policy-from-arn-async (policy-arn)
+(defun aws-iam-policy-from-arn-async (policy-arn policy-type)
   "Create an `aws-iam-policy' struct asynchronously from a policy ARN.
 Returns a promise that resolves with the complete `aws-iam-policy` struct."
   (promise-chain (aws-iam-policy-get-metadata-async policy-arn)
@@ -166,6 +167,7 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
                   (aws-iam-role-viewer--log-debug "Successfully parsed document for %s" policy-arn)
                   (make-aws-iam-policy
                    :name (alist-get 'PolicyName metadata)
+                   :policy-type policy-type
                    :id (alist-get 'PolicyId metadata)
                    :arn (alist-get 'Arn metadata)
                    :path (alist-get 'Path metadata)
@@ -280,6 +282,15 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
           (json-parse-string (url-unhex-string document) :object-type 'alist :array-type 'list)
         document))))
 
+(defun aws-iam-role-viewer-create-inline-policy-struct (role-name policy-name)
+  "Fetch an inline policy and construct an `aws-iam-policy' struct for it."
+  (aws-iam-role-viewer--log-debug "Creating inline policy struct for: %s" policy-name)
+  (let ((doc (aws-iam-role-viewer-get-inline-policy-document role-name policy-name)))
+    (make-aws-iam-policy
+     :name policy-name
+     :policy-type 'inline
+     :document doc)))
+
 (defun aws-iam-role-viewer-split-managed-policies (attached)
   "Split ATTACHED managed policies into (customer . aws) buckets, keeping full alist per item."
   (let ((customer '()) (aws '()))
@@ -325,75 +336,61 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
     (insert "\n#+END_SRC\n"))
   (aws-iam-role-viewer--log-debug "<-- LEAVING insert-trust-policy"))
 
+(defun aws-iam-role-viewer--format-policy-type (policy-type-symbol)
+  "Format the policy type symbol into a human-readable string."
+  (cond ((eq policy-type-symbol 'aws-managed) "AWS Managed")
+        ((eq policy-type-symbol 'customer-managed) "Customer Managed")
+        ((eq policy-type-symbol 'inline) "Inline")
+        ((eq policy-type-symbol 'permissions-boundary) "Permissions Boundary")
+        (t (capitalize (symbol-name policy-type-symbol)))))
+
 (defun aws-iam-role-viewer--insert-policy-struct-details (policy)
   "Insert the details of a pre-fetched `aws-iam-policy' struct into the buffer."
   (aws-iam-role-viewer--log-debug "--> ENTERING insert-policy-struct-details for: %s" (aws-iam-policy-name policy))
   (let ((doc-json (json-encode (aws-iam-policy-document policy))))
-    (aws-iam-role-viewer--log-debug "    ... inserting header")
+    (aws-iam-role-viewer--log-debug "     ... inserting header")
     (insert (format "*** %s\n" (aws-iam-policy-name policy)))
-    (aws-iam-role-viewer--log-debug "    ... inserting props block")
+    (aws-iam-role-viewer--log-debug "     ... inserting props block")
     (insert ":PROPERTIES:\n")
-    (aws-iam-role-viewer--log-debug "    ... inserting ID")
+    (aws-iam-role-viewer--log-debug "     ... inserting AWSPolicyType")
+    (insert (format ":AWSPolicyType: %s\n" (aws-iam-role-viewer--format-policy-type (aws-iam-policy-policy-type policy))))
+    (aws-iam-role-viewer--log-debug "     ... inserting ID")
     (insert (format ":ID: %s\n" (or (aws-iam-policy-id policy) "nil")))
-    (aws-iam-role-viewer--log-debug "    ... inserting ARN")
+    (aws-iam-role-viewer--log-debug "     ... inserting ARN")
     (insert (format ":ARN: %s\n" (or (aws-iam-policy-arn policy) "nil")))
-    (aws-iam-role-viewer--log-debug "    ... inserting Path")
+    (aws-iam-role-viewer--log-debug "     ... inserting Path")
     (insert (format ":Path: %s\n" (or (aws-iam-policy-path policy) "nil")))
-    (aws-iam-role-viewer--log-debug "    ... inserting Description")
+    (aws-iam-role-viewer--log-debug "     ... inserting Description")
     (insert (format ":Description: %s\n" (or (aws-iam-policy-description policy) "nil")))
-    (aws-iam-role-viewer--log-debug "    ... inserting Created")
+    (aws-iam-role-viewer--log-debug "     ... inserting Created")
     (insert (format ":Created: %s\n" (or (aws-iam-policy-create-date policy) "nil")))
-    (aws-iam-role-viewer--log-debug "    ... inserting Updated")
+    (aws-iam-role-viewer--log-debug "     ... inserting Updated")
     (insert (format ":Updated: %s\n" (or (aws-iam-policy-update-date policy) "nil")))
-    (aws-iam-role-viewer--log-debug "    ... inserting AttachmentCount")
+    (aws-iam-role-viewer--log-debug "     ... inserting AttachmentCount")
     (insert (format ":AttachmentCount: %s\n" (or (aws-iam-policy-attachment-count policy) "nil")))
-    (aws-iam-role-viewer--log-debug "    ... inserting DefaultVersion")
+    (aws-iam-role-viewer--log-debug "     ... inserting DefaultVersion")
     (insert (format ":DefaultVersion: %s\n" (or (aws-iam-policy-default-version-id policy) "nil")))
-    (aws-iam-role-viewer--log-debug "    ... inserting END")
+    (aws-iam-role-viewer--log-debug "     ... inserting END")
     (insert ":END:\n")
-    (aws-iam-role-viewer--log-debug "    ... inserting doc header")
+    (aws-iam-role-viewer--log-debug "     ... inserting doc header")
     (insert "Policy Document:\n")
     (insert "#+BEGIN_SRC json\n")
     (let ((start (point)))
-      (aws-iam-role-viewer--log-debug "    ... inserting doc json")
+      (aws-iam-role-viewer--log-debug "     ... inserting doc json")
       (insert doc-json)
-      (aws-iam-role-viewer--log-debug "    ... pretty-printing json")
+      (aws-iam-role-viewer--log-debug "     ... pretty-printing json")
       (condition-case e
           (json-pretty-print start (point))
         (error
          (aws-iam-role-viewer--log-warn "Could not pretty-print policy document JSON: %S" e))))
-    (aws-iam-role-viewer--log-debug "    ... inserting end src")
+    (aws-iam-role-viewer--log-debug "     ... inserting end src")
     (insert "\n#+END_SRC\n"))
   (aws-iam-role-viewer--log-debug "<-- LEAVING insert-policy-struct-details for: %s" (aws-iam-policy-name policy)))
-
-(defun aws-iam-role-viewer-insert-inline-policies (role)
-  "Insert the inline policies section into the buffer."
-  (aws-iam-role-viewer--log-debug "--> ENTERING insert-inline-policies")
-  (let ((inline-names (aws-iam-role-viewer-inline-policies (aws-iam-role-viewer-name role))))
-    (insert "** Inline Policies\n")
-    (if inline-names
-        (dolist (name inline-names)
-          (let* ((doc (aws-iam-role-viewer-get-inline-policy-document (aws-iam-role-viewer-name role) name))
-                 (doc-json (json-encode doc)))
-            (insert (format "*** %s\n" name))
-            (insert "#+BEGIN_SRC json\n")
-            (let ((start (point)))
-              (insert doc-json)
-              (condition-case e
-                  (json-pretty-print start (point))
-                (error
-                 (aws-iam-role-viewer--log-warn "Could not pretty-print inline policy JSON: %S" e))))
-            (insert "\n#+END_SRC\n")))
-      (insert "nil\n")))
-  (aws-iam-role-viewer--log-debug "<-- LEAVING insert-inline-policies"))
 
 (defun aws-iam-role-viewer--insert-remaining-sections-and-finalize (role buf)
   "Insert remaining sync sections and finalize buffer display."
   (aws-iam-role-viewer--log-debug "--> ENTERING insert-remaining-sections-and-finalize")
   (with-current-buffer buf
-    (aws-iam-role-viewer-insert-inline-policies role)
-    ;; This `when` block is buggy because the function it calls is obsolete.
-    ;; We are fixing it by removing it entirely.
     (aws-iam-role-viewer-insert-trust-policy role))
   (aws-iam-role-viewer-finalize-and-display-role-buffer buf)
   (aws-iam-role-viewer--log-debug "<-- LEAVING insert-remaining-sections-and-finalize"))
@@ -408,75 +405,75 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
     (insert ";; C-c C-h : Hide all property drawers\n")
     (insert ";; C-c C-r : Reveal all property drawers\n\n")
 
-    ;; --- Unified Asynchronous Fetching ---
-    (let* ((attached (aws-iam-role-viewer-attached-policies (aws-iam-role-viewer-name role)))
+    ;; --- Unified Policy Fetching ---
+    (let* ((role-name (aws-iam-role-viewer-name role))
+           ;; 1. Get ARNs/names for all policy types
+           (attached (aws-iam-role-viewer-attached-policies role-name))
            (split (aws-iam-role-viewer-split-managed-policies attached))
-           (customer-arns (mapcar (lambda (p) (alist-get 'PolicyArn p)) (car split)))
-           (aws-arns (mapcar (lambda (p) (alist-get 'PolicyArn p)) (cdr split)))
+           (customer-managed (car split))
+           (aws-managed (cdr split))
+           (inline-policy-names (aws-iam-role-viewer-inline-policies role-name))
            (boundary-arn (aws-iam-role-viewer-permissions-boundary-arn role))
-           (all-arns (if boundary-arn (cons boundary-arn (append aws-arns customer-arns)) (append aws-arns customer-arns)))
-           (promises (if all-arns (mapcar #'aws-iam-policy-from-arn-async all-arns))))
 
-      (if promises
+           ;; 2. Create promises for all managed policies that need async fetching
+           (aws-promises (mapcar (lambda (p) (aws-iam-policy-from-arn-async (alist-get 'PolicyArn p) 'aws-managed)) aws-managed))
+           (customer-promises (mapcar (lambda (p) (aws-iam-policy-from-arn-async (alist-get 'PolicyArn p) 'customer-managed)) customer-managed))
+           (boundary-promise (when boundary-arn (list (aws-iam-policy-from-arn-async boundary-arn 'permissions-boundary))))
+           (all-promises (append aws-promises customer-promises boundary-promise))
+
+           ;; 3. Create structs for inline policies (synchronous)
+           (inline-policy-structs (mapcar (lambda (name) (aws-iam-role-viewer-create-inline-policy-struct role-name name)) inline-policy-names)))
+
+      (if all-promises
+          ;; Case 1: There are managed policies to fetch asynchronously
           (promise-then
-           (promise-all promises)
-           (lambda (policies) ; `policies` is a VECTOR here
+           (promise-all all-promises)
+           (lambda (managed-policies-vector)
              (condition-case e
                  (progn
-                   (aws-iam-role-viewer--log-debug "Final promise callback entered.")
+                   (aws-iam-role-viewer--log-debug "Final promise callback entered for managed policies.")
                    (with-current-buffer buf
-                     (let* ((policies-list (seq-into policies 'list)) ;; FIX: Convert vector to list
-                            (valid-policies (cl-remove-if-not #'identity policies-list)))
-                       (aws-iam-role-viewer--log-debug "Found %d total valid policies." (length valid-policies))
-                       ;; AWS Managed Policies
-                       (aws-iam-role-viewer--log-debug "--- Rendering AWS Managed Policies ---")
-                       (insert "** AWS Managed Policies\n")
-                       (aws-iam-role-viewer--log-debug "Filtering for AWS policies...")
-                       (let ((aws-policies (cl-remove-if-not (lambda (p) (member (aws-iam-policy-arn p) aws-arns)) valid-policies)))
-                         (aws-iam-role-viewer--log-debug "Found %d AWS policies to render." (length aws-policies))
-                         (aws-iam-role-viewer--log-debug "CONTENT of aws-policies list: %S" aws-policies)
-                         (if aws-policies
-                             (dolist (p aws-policies)
-                               (aws-iam-role-viewer--log-debug "Rendering AWS policy: %s" (aws-iam-policy-name p))
-                               (aws-iam-role-viewer--insert-policy-struct-details p))
-                           (insert "nil\n")))
-                       (aws-iam-role-viewer--log-debug "--- Finished AWS Managed Policies ---")
+                     (let* ((managed-policies-list (seq-into managed-policies-vector 'list))
+                            (valid-managed-policies (cl-remove-if-not #'identity managed-policies-list))
+                            ;; Separate boundary policy from the rest
+                            (boundary-policy (cl-find 'permissions-boundary valid-managed-policies :key #'aws-iam-policy-policy-type))
+                            (regular-managed-policies (cl-remove 'permissions-boundary valid-managed-policies :key #'aws-iam-policy-policy-type))
+                            (all-permission-policies (append regular-managed-policies inline-policy-structs)))
 
-                       ;; Customer Managed Policies
-                       (aws-iam-role-viewer--log-debug "--- Rendering Customer Managed Policies ---")
-                       (insert "** Customer Managed Policies\n")
-                       (aws-iam-role-viewer--log-debug "Filtering for Customer policies...")
-                       (let ((customer-policies (cl-remove-if-not (lambda (p) (member (aws-iam-policy-arn p) customer-arns)) valid-policies)))
-                         (aws-iam-role-viewer--log-debug "Found %d Customer policies to render." (length customer-policies))
-                         (if customer-policies
-                             (dolist (p customer-policies)
-                               (aws-iam-role-viewer--log-debug "Rendering Customer policy: %s" (aws-iam-policy-name p))
-                               (aws-iam-role-viewer--insert-policy-struct-details p))
-                           (insert "nil\n")))
-                       (aws-iam-role-viewer--log-debug "--- Finished Customer Managed Policies ---")
+                       ;; 1. Render Permission Policies (AWS, Customer, Inline)
+                       (insert "** Permission Policies\n")
+                       (if all-permission-policies
+                           (progn
+                             (aws-iam-role-viewer--log-debug "Rendering %d permission policies." (length all-permission-policies))
+                             (dolist (p all-permission-policies) (aws-iam-role-viewer--insert-policy-struct-details p)))
+                         (insert "nil\n"))
 
-                       ;; Permissions Boundary
-                       (aws-iam-role-viewer--log-debug "--- Rendering Permissions Boundary Policy ---")
+                       ;; 2. Render Permissions Boundary Policy
                        (when boundary-arn
                          (insert "** Permissions Boundary Policy\n")
-                         (aws-iam-role-viewer--log-debug "Finding boundary policy with ARN: %s" boundary-arn)
-                         (let ((boundary-policy (cl-find-if (lambda (p) (equal (aws-iam-policy-arn p) boundary-arn)) valid-policies)))
-                           (if boundary-policy
-                               (progn
-                                 (aws-iam-role-viewer--log-debug "Found boundary policy. Rendering...")
-                                 (aws-iam-role-viewer--insert-policy-struct-details boundary-policy))
+                         (if boundary-policy
                              (progn
-                               (aws-iam-role-viewer--log-debug "Boundary policy not found in valid policies list.")
-                               (insert "Failed to fetch boundary policy.\n")))))
-                       (aws-iam-role-viewer--log-debug "--- Finished Permissions Boundary Policy ---")
-                       
+                               (aws-iam-role-viewer--log-debug "Rendering permissions boundary policy.")
+                               (aws-iam-role-viewer--insert-policy-struct-details boundary-policy))
+                           (insert "Failed to fetch permissions boundary policy.\n")))
+
+                       ;; 3. Render remaining sections (Trust Policy) and finalize
                        (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf))))
                (error
                 (aws-iam-role-viewer--log-error "!!!!!! UNCAUGHT CRITICAL ERROR IN FINAL CALLBACK !!!!!!")
                 (aws-iam-role-viewer--log-error "Error: %S" e)))))
+        ;; Case 2: No managed policies, only inline (or none at all)
         (progn
-          (aws-iam-role-viewer--log-debug "No managed policies found. Finalizing.")
-          (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf))))))
+          (aws-iam-role-viewer--log-debug "No managed policies to fetch. Processing inline policies only.")
+          (with-current-buffer buf
+            (insert "** Permission Policies\n")
+            (if inline-policy-structs
+                (progn
+                  (aws-iam-role-viewer--log-debug "Rendering %d inline policies." (length inline-policy-structs))
+                  (dolist (p inline-policy-structs) (aws-iam-role-viewer--insert-policy-struct-details p)))
+              (insert "nil\n"))
+            ;; Permissions boundary can't exist without managed policies, but trust policy still needs to be rendered.
+            (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf)))))))
 
 (defun aws-iam-role-viewer-show-all-drawers ()
   "Show all drawers in Org buffer using org-fold."
