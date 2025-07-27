@@ -448,16 +448,11 @@ rendering of role information."
         (insert "nil\n")
         (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf)))))
 
-(defun aws-iam-role-viewer-show-all-drawers ()
-  "Show all drawers in Org buffer using org-fold."
-  (interactive)
-  (org-fold-show-all))
-
 (defun aws-iam-role-viewer-finalize-and-display-role-buffer (buf)
   "Set keybinds, mode, and display the buffer BUF."
   (with-current-buffer buf
     (local-set-key (kbd "C-c C-h") #'org-fold-hide-drawer-all)
-    (local-set-key (kbd "C-c C-r") #'aws-iam-role-viewer-show-all-drawers)
+    (local-set-key (kbd "C-c C-r") #'org-fold-show-all)
     (goto-char (point-min))
     (read-only-mode 1)
     (if aws-iam-role-viewer-show-folded-by-default
