@@ -6,7 +6,10 @@
 (require 'async)
 (require 'promise)
 (require 'ob-shell)
+
 (add-to-list 'org-babel-load-languages '(shell . t))
+(add-to-list 'org-src-lang-modes '("aws-iam" . json))
+(add-to-list 'org-src-lang-modes '("json" . json))
 
 (defvar aws-iam-role-viewer-profile nil
   "Default AWS CLI profile to use for IAM role operations.
