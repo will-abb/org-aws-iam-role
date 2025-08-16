@@ -1,4 +1,55 @@
-;;; org-aws-iam-role.el --- IAM Role and Policy object browser -*- lexical-binding: t; -*-
+;;; org-aws-iam-role.el --- Browse and modify AWS IAM Roles in Org Babel -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2025 Williams Bosch-Bello
+
+;; Author: Williams Bosch-Bello <williamsbosch@gmail.com>
+;; Maintainer: Williams Bosch-Bello <williamsbosch@gmail.com>
+;; Created: August 16, 2025
+;; Version: 1.0.0
+;; Package-Version: 1.0.0
+;; Package-Requires: ((emacs "26.1"))
+;; Keywords: aws, iam, org, babel, tools
+;; URL: https://github.com/will-abb/org-aws-iam-role
+;; Homepage: https://github.com/will-abb/org-aws-iam-role
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;; This file is part of org-aws-iam-role.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; Provides an interactive interface for browsing and modifying AWS IAM
+;; roles directly within Emacs. The package renders all role data in a
+;; detailed Org mode buffer and uses a custom Org Babel language,
+;; `aws-iam`, to apply policy changes via the AWS CLI.
+
+;; Features include:
+;; - Interactive browsing and selection of IAM roles.
+;; - Full display of all policy types: Trust Policy, Permissions Boundary,
+;;   AWS-Managed, Customer-Managed, and Inline policies.
+;; - Direct modification of any policy through Org Babel source blocks.
+;; - Asynchronous fetching of initial role and policy data for a fast UI.
+;; - Safe by default: buffer opens in read-only mode to prevent accidents.
+;; - Clear feedback on command success or failure in Babel results blocks.
+;; - Integrated keybindings for a smooth workflow:
+;;   - C-c C-e: Toggle read-only mode to enable/disable editing.
+;;   - C-c C-c: Apply changes for the policy under the cursor to AWS.
+;;   - C-c C-h / C-c C-r: Hide or reveal all property drawers.
+
+;;; Code:
 
 (require 'cl-lib)
 (require 'json)
