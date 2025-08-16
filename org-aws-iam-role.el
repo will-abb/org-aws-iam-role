@@ -1,4 +1,4 @@
-;;; aws-iam-role-viewer.el --- IAM Role and Policy object browser -*- lexical-binding: t; -*-
+;;; org-aws-iam-role.el --- IAM Role and Policy object browser -*- lexical-binding: t; -*-
 
 (require 'cl-lib)
 (require 'json)
@@ -11,40 +11,40 @@
 (add-to-list 'org-src-lang-modes '("aws-iam" . json))
 (add-to-list 'org-src-lang-modes '("json" . json))
 
-(defvar aws-iam-role-viewer-profile nil
+(defvar org-aws-iam-role-profile nil
   "Default AWS CLI profile to use for IAM role operations.
 If nil, uses default profile or environment credentials.")
 
-(defvar aws-iam-role-viewer-show-folded-by-default nil
+(defvar org-aws-iam-role-show-folded-by-default nil
   "If non-nil, show the role detail buffer with all sections folded.")
 
-(defvar aws-iam-role-viewer-fullscreen t
+(defvar org-aws-iam-role-fullscreen t
   "If non-nil, show the IAM role buffer in fullscreen.")
 
-(defvar aws-iam-role-viewer-read-only-by-default t
+(defvar org-aws-iam-role-read-only-by-default t
   "If non-nil, role viewer buffers will be read-only by default.")
 
 ;;;###autoload
-(defun aws-iam-role-viewer-view-details ()
+(defun org-aws-iam-role-view-details ()
   "Prompt for an IAM role and display its details in an Org-mode buffer."
   (interactive)
-  (aws-iam-role-viewer-check-auth)
-  (let* ((name (completing-read "IAM Role: " (aws-iam-role-viewer-list-names)))
-         (role (aws-iam-role-viewer-construct
-                (aws-iam-role-viewer-get-full name))))
-    (aws-iam-role-viewer-show-buffer role)))
+  (org-aws-iam-role-check-auth)
+  (let* ((name (completing-read "IAM Role: " (org-aws-iam-role-list-names)))
+         (role (org-aws-iam-role-construct
+                (org-aws-iam-role-get-full name))))
+    (org-aws-iam-role-show-buffer role)))
 
 ;;;###autoload
-(defun aws-iam-role-viewer-set-profile ()
+(defun org-aws-iam-role-set-profile ()
   "Prompt for and set the AWS CLI profile for IAM role operations."
   (interactive)
   (let* ((output (shell-command-to-string "aws configure list-profiles"))
          (profiles (split-string output "\n" t)))
-    (setq aws-iam-role-viewer-profile
+    (setq org-aws-iam-role-profile
           (completing-read "Select AWS profile: " profiles nil t))
-    (message "Set IAM Role AWS profile to: %s" aws-iam-role-viewer-profile)))
+    (message "Set IAM Role AWS profile to: %s" org-aws-iam-role-profile)))
 
-(defun aws-iam-role-viewer-toggle-read-only ()
+(defun org-aws-iam-role-toggle-read-only ()
   "Toggle read-only mode in the current buffer and provide feedback."
   (interactive)
   (if buffer-read-only
@@ -58,22 +58,22 @@ If nil, uses default profile or environment credentials.")
 ;;; Internal Helpers & Structs
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun aws-iam-role-viewer--cli-profile-arg ()
+(defun org-aws-iam-role--cli-profile-arg ()
   "Return the AWS CLI profile argument string, or an empty string."
-  (if aws-iam-role-viewer-profile
-      (format " --profile %s" (shell-quote-argument aws-iam-role-viewer-profile))
+  (if org-aws-iam-role-profile
+      (format " --profile %s" (shell-quote-argument org-aws-iam-role-profile))
     ""))
 
-(defun aws-iam-role-viewer-check-auth ()
+(defun org-aws-iam-role-check-auth ()
   "Ensure the user is authenticated with AWS. Raise error if not."
   (let* ((cmd (format "aws sts get-caller-identity --output json%s"
-                      (aws-iam-role-viewer--cli-profile-arg)))
+                      (org-aws-iam-role--cli-profile-arg)))
          (exit-code (shell-command cmd nil nil)))
     ;; A non-zero exit code from the AWS CLI indicates an error (e.g., bad credentials).
     (unless (eq exit-code 0)
       (user-error "AWS CLI not authenticated: please check your credentials or AWS_PROFILE"))))
 
-(defun aws-iam-format-tags (tags)
+(defun org-aws-iam-role-format-tags (tags)
   "Format AWS tags from a list of alists into a single JSON string."
   (when tags
     ;; AWS tags are a list of alists, e.g., '((Key . "k1") (Value . "v1")).
@@ -84,7 +84,7 @@ If nil, uses default profile or environment credentials.")
                                 tags)))
       (json-encode simple-alist))))
 
-(cl-defstruct aws-iam-role-viewer
+(cl-defstruct org-aws-iam-role
   name
   arn
   role-id
@@ -122,7 +122,7 @@ If nil, uses default profile or environment credentials.")
 Returns a promise that resolves with the raw JSON string."
   (let* ((cmd (format "aws iam get-policy --policy-arn %s --output json%s"
                       (shell-quote-argument policy-arn)
-                      (aws-iam-role-viewer--cli-profile-arg)))
+                      (org-aws-iam-role--cli-profile-arg)))
          (start-func `(lambda () (shell-command-to-string ,cmd))))
     (promise:async-start start-func)))
 
@@ -132,7 +132,7 @@ Returns a promise that resolves with the raw JSON string."
   (let* ((cmd (format "aws iam get-policy-version --policy-arn %s --version-id %s --output json%s"
                       (shell-quote-argument policy-arn)
                       (shell-quote-argument version-id)
-                      (aws-iam-role-viewer--cli-profile-arg)))
+                      (org-aws-iam-role--cli-profile-arg)))
          (start-func `(lambda () (shell-command-to-string ,cmd))))
     (promise:async-start start-func)))
 
@@ -214,7 +214,7 @@ Returns a promise that resolves with the struct."
   (let* ((cmd (format "aws iam get-role-policy --role-name %s --policy-name %s --output json%s"
                       (shell-quote-argument role-name)
                       (shell-quote-argument policy-name)
-                      (aws-iam-role-viewer--cli-profile-arg)))
+                      (org-aws-iam-role--cli-profile-arg)))
          (start-func `(lambda () (shell-command-to-string ,cmd))))
     (promise-chain (promise:async-start start-func)
       (then (lambda (json)
@@ -224,12 +224,12 @@ Returns a promise that resolves with the struct."
 ;;; IAM Role Data Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun aws-iam-role-viewer--fetch-roles-page (marker)
+(defun org-aws-iam-role--fetch-roles-page (marker)
   "Fetch a single page of IAM roles from AWS.
 If MARKER is non-nil, it's used as the `--starting-token`.
 Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (let* ((cmd (format "aws iam list-roles --output json%s%s"
-                      (aws-iam-role-viewer--cli-profile-arg)
+                      (org-aws-iam-role--cli-profile-arg)
                       (if marker
                           (format " --starting-token %s" (shell-quote-argument marker))
                         "")))
@@ -237,7 +237,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
          (parsed (json-parse-string json :object-type 'alist :array-type 'list)))
     (cons (alist-get 'Roles parsed) (alist-get 'Marker parsed))))
 
-(defun aws-iam-role-viewer-list-names ()
+(defun org-aws-iam-role-list-names ()
   "Return a list of all IAM role names, handling pagination."
   (let ((all-roles '())
         (marker nil)
@@ -245,7 +245,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
     ;; Loop until the AWS API returns no more pages (i.e., the marker is nil).
     ;; The `first-run` flag ensures the loop runs at least once when marker starts as nil.
     (while (or first-run marker)
-      (let* ((page-result (aws-iam-role-viewer--fetch-roles-page marker))
+      (let* ((page-result (org-aws-iam-role--fetch-roles-page marker))
              (roles-on-page (car page-result))
              (next-marker (cdr page-result)))
         (setq all-roles (nconc all-roles roles-on-page))
@@ -253,21 +253,21 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
         (setq first-run nil)))
     (mapcar (lambda (r) (alist-get 'RoleName r)) all-roles)))
 
-(defun aws-iam-role-viewer-get-full (role-name)
+(defun org-aws-iam-role-get-full (role-name)
   "Fetch full IAM role object from AWS using `get-role`."
   (let* ((cmd (format "aws iam get-role --role-name %s --output json%s"
                       (shell-quote-argument role-name)
-                      (aws-iam-role-viewer--cli-profile-arg)))
+                      (org-aws-iam-role--cli-profile-arg)))
          (json (shell-command-to-string cmd))
          (parsed (alist-get 'Role (json-parse-string json :object-type 'alist :array-type 'list))))
     parsed))
 
-(defun aws-iam-role-viewer-construct (obj)
-  "Create an `aws-iam-role-viewer` struct from a full `get-role` object."
+(defun org-aws-iam-role-construct (obj)
+  "Create an `org-aws-iam-role` struct from a full `get-role` object."
   ;; PermissionsBoundary and RoleLastUsed can be nil, so we get them first.
   (let ((pb (alist-get 'PermissionsBoundary obj))
         (last-used (alist-get 'RoleLastUsed obj)))
-    (make-aws-iam-role-viewer
+    (make-org-aws-iam-role
      :name (alist-get 'RoleName obj)
      :arn (alist-get 'Arn obj)
      :role-id (alist-get 'RoleId obj)
@@ -282,25 +282,25 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
      :last-used-region (alist-get 'Region last-used)
      :last-used-date (alist-get 'LastUsedDate last-used))))
 
-(defun aws-iam-role-viewer-attached-policies (role-name)
+(defun org-aws-iam-role-attached-policies (role-name)
   "Return list of attached managed policies for ROLE-NAME."
   (let* ((cmd (format "aws iam list-attached-role-policies --role-name %s --output json%s"
                       (shell-quote-argument role-name)
-                      (aws-iam-role-viewer--cli-profile-arg)))
+                      (org-aws-iam-role--cli-profile-arg)))
          (json (shell-command-to-string cmd))
          (parsed (json-parse-string json :object-type 'alist :array-type 'list)))
     (alist-get 'AttachedPolicies parsed)))
 
-(defun aws-iam-role-viewer-inline-policies (role-name)
+(defun org-aws-iam-role-inline-policies (role-name)
   "Return list of inline policy names for ROLE-NAME."
   (let* ((cmd (format "aws iam list-role-policies --role-name %s --output json%s"
                       (shell-quote-argument role-name)
-                      (aws-iam-role-viewer--cli-profile-arg)))
+                      (org-aws-iam-role--cli-profile-arg)))
          (json (shell-command-to-string cmd))
          (parsed (json-parse-string json :object-type 'alist :array-type 'list)))
     (alist-get 'PolicyNames parsed)))
 
-(defun aws-iam-role-viewer-split-managed-policies (attached)
+(defun org-aws-iam-role-split-managed-policies (attached)
   "Split ATTACHED managed policies into (customer . aws) buckets, keeping full alist per item."
   (let ((customer '()) (aws '()))
     (dolist (p attached)
@@ -339,7 +339,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
                   (format "aws iam update-assume-role-policy --role-name %s --policy-document %s%s"
                           (shell-quote-argument role-name)
                           (shell-quote-argument json-string)
-                          (aws-iam-role-viewer--cli-profile-arg)))
+                          (org-aws-iam-role--cli-profile-arg)))
 
                  ;; 2. Inline policies: use 'put-role-policy'.
                  ((eq policy-type 'inline)
@@ -347,7 +347,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
                           (shell-quote-argument role-name)
                           (shell-quote-argument policy-name)
                           (shell-quote-argument json-string)
-                          (aws-iam-role-viewer--cli-profile-arg)))
+                          (org-aws-iam-role--cli-profile-arg)))
 
                  ;; 3. Managed policies: create a new policy version.
                  ((or (eq policy-type 'customer-managed) (eq policy-type 'aws-managed))
@@ -357,7 +357,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
                     (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
                             (shell-quote-argument policy-arn)
                             (shell-quote-argument json-string)
-                            (aws-iam-role-viewer--cli-profile-arg))))
+                            (org-aws-iam-role--cli-profile-arg))))
 
                  ;; 4. Permissions Boundary: is a managed policy.
                  ((eq policy-type 'permissions-boundary)
@@ -367,7 +367,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
                     (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
                             (shell-quote-argument policy-arn)
                             (shell-quote-argument json-string)
-                            (aws-iam-role-viewer--cli-profile-arg))))
+                            (org-aws-iam-role--cli-profile-arg))))
 
                  (t (user-error "Unsupported policy type for modification: %s" policy-type)))))
       ;; Execute command, get output, and return "Success!" if output is empty.
@@ -379,27 +379,27 @@ and header arguments to construct and run the appropriate AWS CLI command."
 ;;; Display Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun aws-iam-role-viewer-insert-role-header (role)
+(defun org-aws-iam-role-insert-role-header (role)
   "Insert the main role heading and properties into the buffer."
-  (insert (format "* IAM Role: %s\n" (aws-iam-role-viewer-name role)))
+  (insert (format "* IAM Role: %s\n" (org-aws-iam-role-name role)))
   (insert ":PROPERTIES:\n")
-  (insert (format ":ARN: %s\n" (aws-iam-role-viewer-arn role)))
-  (insert (format ":RoleID: %s\n" (aws-iam-role-viewer-role-id role)))
-  (insert (format ":Path: %s\n" (aws-iam-role-viewer-path role)))
-  (insert (format ":Created: %s\n" (aws-iam-role-viewer-create-date role)))
-  (insert (format ":MaxSessionDuration: %d\n" (aws-iam-role-viewer-max-session-duration role)))
+  (insert (format ":ARN: %s\n" (org-aws-iam-role-arn role)))
+  (insert (format ":RoleID: %s\n" (org-aws-iam-role-role-id role)))
+  (insert (format ":Path: %s\n" (org-aws-iam-role-path role)))
+  (insert (format ":Created: %s\n" (org-aws-iam-role-create-date role)))
+  (insert (format ":MaxSessionDuration: %d\n" (org-aws-iam-role-max-session-duration role)))
   ;; Use "nil" as a string for display if the actual value is nil.
-  (insert (format ":Description: %s\n" (or (aws-iam-role-viewer-description role) "nil")))
-  (insert (format ":PermissionsBoundaryArn: %s\n" (or (aws-iam-role-viewer-permissions-boundary-arn role) "nil")))
-  (insert (format ":LastUsedDate: %s\n" (or (aws-iam-role-viewer-last-used-date role) "nil")))
-  (insert (format ":LastUsedRegion: %s\n" (or (aws-iam-role-viewer-last-used-region role) "nil")))
-  (insert (format ":Tags: %s\n" (or (aws-iam-format-tags (aws-iam-role-viewer-tags role)) "nil")))
+  (insert (format ":Description: %s\n" (or (org-aws-iam-role-description role) "nil")))
+  (insert (format ":PermissionsBoundaryArn: %s\n" (or (org-aws-iam-role-permissions-boundary-arn role) "nil")))
+  (insert (format ":LastUsedDate: %s\n" (or (org-aws-iam-role-last-used-date role) "nil")))
+  (insert (format ":LastUsedRegion: %s\n" (or (org-aws-iam-role-last-used-region role) "nil")))
+  (insert (format ":Tags: %s\n" (or (org-aws-iam-role-format-tags (org-aws-iam-role-tags role)) "nil")))
   (insert ":END:\n"))
 
-(defun aws-iam-role-viewer-insert-trust-policy (role)
+(defun org-aws-iam-role-insert-trust-policy (role)
   "Insert the trust policy section into the buffer."
-  (let ((trust-policy-json (json-encode (aws-iam-role-viewer-trust-policy role)))
-        (role-name (aws-iam-role-viewer-name role)))
+  (let ((trust-policy-json (json-encode (org-aws-iam-role-trust-policy role)))
+        (role-name (org-aws-iam-role-name role)))
     (insert "** Trust Policy\n")
     (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-type \"trust-policy\" :results output\n" role-name))
     (let ((start (point)))
@@ -410,7 +410,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
         (error nil)))
     (insert "\n#+END_SRC\n")))
 
-(defun aws-iam-role-viewer--format-policy-type (policy-type-symbol)
+(defun org-aws-iam-role--format-policy-type (policy-type-symbol)
   "Format the policy type symbol into a human-readable string."
   (cond ((eq policy-type-symbol 'aws-managed) "AWS Managed")
         ((eq policy-type-symbol 'customer-managed) "Customer Managed")
@@ -418,14 +418,14 @@ and header arguments to construct and run the appropriate AWS CLI command."
         ((eq policy-type-symbol 'permissions-boundary) "Permissions Boundary")
         (t (capitalize (symbol-name policy-type-symbol)))))
 
-(defun aws-iam-role-viewer--insert-policy-struct-details (policy role-name)
+(defun org-aws-iam-role--insert-policy-struct-details (policy role-name)
   "Insert the details of a pre-fetched `aws-iam-policy' struct into the buffer."
   (let* ((doc-json (json-encode (aws-iam-policy-document policy)))
          (policy-type-symbol (aws-iam-policy-policy-type policy))
          (policy-arn (or (aws-iam-policy-arn policy) "")))
     (insert (format "*** %s\n" (aws-iam-policy-name policy)))
     (insert ":PROPERTIES:\n")
-    (insert (format ":AWSPolicyType: %s\n" (aws-iam-role-viewer--format-policy-type policy-type-symbol)))
+    (insert (format ":AWSPolicyType: %s\n" (org-aws-iam-role--format-policy-type policy-type-symbol)))
     (insert (format ":ID: %s\n" (or (aws-iam-policy-id policy) "nil")))
     (insert (format ":ARN: %s\n" (or policy-arn "nil")))
     (insert (format ":Path: %s\n" (or (aws-iam-policy-path policy) "nil")))
@@ -447,26 +447,26 @@ and header arguments to construct and run the appropriate AWS CLI command."
         (error nil)))
     (insert "\n#+END_SRC\n")))
 
-(defun aws-iam-role-viewer--insert-remaining-sections-and-finalize (role buf)
+(defun org-aws-iam-role--insert-remaining-sections-and-finalize (role buf)
   "Insert remaining sync sections and finalize buffer display."
   (with-current-buffer buf
-    (aws-iam-role-viewer-insert-trust-policy role))
-  (aws-iam-role-viewer-finalize-and-display-role-buffer buf))
+    (org-aws-iam-role-insert-trust-policy role))
+  (org-aws-iam-role-finalize-and-display-role-buffer buf))
 
-(defun aws-iam-role-viewer--get-all-policies-async (role)
+(defun org-aws-iam-role--get-all-policies-async (role)
   "Fetch all attached, inline, and boundary policies for ROLE.
 This function is asynchronous and returns a single promise that
 resolves with a vector of `aws-iam-policy' structs when all
 underlying fetches are complete. Returns nil if no policies
 are found."
-  (let* ((role-name (aws-iam-role-viewer-name role))
+  (let* ((role-name (org-aws-iam-role-name role))
          ;; 1. Get lists of all policy identifiers first
-         (attached (aws-iam-role-viewer-attached-policies role-name))
-         (split (aws-iam-role-viewer-split-managed-policies attached))
+         (attached (org-aws-iam-role-attached-policies role-name))
+         (split (org-aws-iam-role-split-managed-policies attached))
          (customer-managed (car split))
          (aws-managed (cdr split))
-         (inline-policy-names (aws-iam-role-viewer-inline-policies role-name))
-         (boundary-arn (aws-iam-role-viewer-permissions-boundary-arn role))
+         (inline-policy-names (org-aws-iam-role-inline-policies role-name))
+         (boundary-arn (org-aws-iam-role-permissions-boundary-arn role))
 
          ;; 2. Create a unified list of promises for ALL policy types
          (aws-promises (mapcar (lambda (p) (aws-iam-policy-from-arn-async (alist-get 'PolicyArn p) 'aws-managed)) aws-managed))
@@ -478,7 +478,7 @@ are found."
     (when all-promises
       (promise-all all-promises))))
 
-(defun aws-iam-role-viewer--insert-policies-section (all-policies-vector boundary-arn role-name)
+(defun org-aws-iam-role--insert-policies-section (all-policies-vector boundary-arn role-name)
   "Render a vector of fetched policies into the current buffer.
 ALL-POLICIES-VECTOR is the result from a `promise-all' call.
 BOUNDARY-ARN is the original ARN of the boundary policy, used
@@ -493,17 +493,17 @@ to determine if the section header should be rendered."
     ;; 1. Render Permission Policies (AWS, Customer, Inline)
     (insert "** Permission Policies\n")
     (if permission-policies
-        (dolist (p permission-policies) (aws-iam-role-viewer--insert-policy-struct-details p role-name))
+        (dolist (p permission-policies) (org-aws-iam-role--insert-policy-struct-details p role-name))
       (insert "nil\n"))
 
     ;; 2. Render Permissions Boundary Policy
     (when boundary-arn
       (insert "** Permissions Boundary Policy\n")
       (if boundary-policy
-          (aws-iam-role-viewer--insert-policy-struct-details boundary-policy role-name)
+          (org-aws-iam-role--insert-policy-struct-details boundary-policy role-name)
         (insert "Failed to fetch permissions boundary policy.\n")))))
 
-(defun aws-iam-role-viewer-populate-role-buffer (role buf)
+(defun org-aws-iam-role-populate-role-buffer (role buf)
   "Insert all role details and policies into the buffer BUF.
 This function orchestrates the asynchronous fetching and
 rendering of role information."
@@ -524,12 +524,12 @@ rendering of role information."
     (insert "- =C-c C-h= :: Hide all property drawers.\n")
     (insert "- =C-c C-r= :: Reveal all property drawers.\n\n")
     ;; 2. Insert the main IAM Role header next.
-    (aws-iam-role-viewer-insert-role-header role))
+    (org-aws-iam-role-insert-role-header role))
 
   ;; Asynchronously fetch all policies for the role.
-  (let ((policies-promise (aws-iam-role-viewer--get-all-policies-async role))
-        (boundary-arn (aws-iam-role-viewer-permissions-boundary-arn role))
-        (role-name (aws-iam-role-viewer-name role)))
+  (let ((policies-promise (org-aws-iam-role--get-all-policies-async role))
+        (boundary-arn (org-aws-iam-role-permissions-boundary-arn role))
+        (role-name (org-aws-iam-role-name role)))
     ;; If there are policies, wait for them and then render. Otherwise, render the empty state.
     (if policies-promise
         (promise-then
@@ -539,44 +539,44 @@ rendering of role information."
            (condition-case e
                (with-current-buffer buf
                  ;; Insert the fetched policy sections.
-                 (aws-iam-role-viewer--insert-policies-section all-policies-vector boundary-arn role-name)
+                 (org-aws-iam-role--insert-policies-section all-policies-vector boundary-arn role-name)
                  ;; Insert remaining synchronous sections and finalize the buffer.
-                 (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf))
+                 (org-aws-iam-role--insert-remaining-sections-and-finalize role buf))
              (error nil))))
       ;; Case where there are no policies of any kind.
       (with-current-buffer buf
         (insert "** Permission Policies\n")
         (insert "nil\n")
-        (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf)))))
+        (org-aws-iam-role--insert-remaining-sections-and-finalize role buf)))))
 
-(defun aws-iam-role-viewer-finalize-and-display-role-buffer (buf)
+(defun org-aws-iam-role-finalize-and-display-role-buffer (buf)
   "Set keybinds, mode, and display the buffer BUF."
   (with-current-buffer buf
-    (local-set-key (kbd "C-c C-e") #'aws-iam-role-viewer-toggle-read-only)
+    (local-set-key (kbd "C-c C-e") #'org-aws-iam-role-toggle-read-only)
     (local-set-key (kbd "C-c C-h") #'org-fold-hide-drawer-all)
     (local-set-key (kbd "C-c C-r") #'org-fold-show-all)
     (goto-char (point-min))
-    (when aws-iam-role-viewer-read-only-by-default
+    (when org-aws-iam-role-read-only-by-default
       (read-only-mode 1))
-    (if aws-iam-role-viewer-show-folded-by-default
+    (if org-aws-iam-role-show-folded-by-default
         (org-overview)
       (org-fold-show-all)))
   ;; Display in a pop-up window.
   (let ((window (display-buffer buf '((display-buffer-pop-up-window)))))
     ;; If fullscreen is enabled, make this the only window.
-    (when (and aws-iam-role-viewer-fullscreen (window-live-p window))
+    (when (and org-aws-iam-role-fullscreen (window-live-p window))
       (select-window window)
       (delete-other-windows))))
 
-(defun aws-iam-role-viewer-show-buffer (role)
+(defun org-aws-iam-role-show-buffer (role)
   "Render IAM ROLE object and its policies in a new Org-mode buffer."
   (let* ((timestamp (format-time-string "%Y%m%d-%H%M%S"))
          ;; Add a timestamp to the buffer name to ensure uniqueness for multiple views.
          (buf-name (format "*IAM Role: %s <%s>*"
-                           (aws-iam-role-viewer-name role)
+                           (org-aws-iam-role-name role)
                            timestamp))
          (buf (get-buffer-create buf-name)))
-    (aws-iam-role-viewer-populate-role-buffer role buf)))
+    (org-aws-iam-role-populate-role-buffer role buf)))
 
-(provide 'aws-iam-role-viewer)
-;;; aws-iam-role-viewer.el ends here
+(provide 'org-aws-iam-role)
+;;; org-aws-iam-role.el ends here

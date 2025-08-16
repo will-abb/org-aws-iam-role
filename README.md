@@ -1,21 +1,19 @@
-# IAM Role Viewer for Emacs
+# Org AWS IAM Role for Emacs
 
-`aws-iam-role-viewer.el` is an Emacs package for inspecting AWS IAM roles and viewing its policy documents. It renders all role data—including trust policies, permissions boundaries, and all associated policies (AWS managed, customer managed, and inline)—in an Org-mode buffer using the AWS CLI under the hood.
+`org-aws-iam-role.el` is an Emacs package for inspecting **and modifying** AWS IAM roles and their policy documents. It renders all role data—including trust policies, permissions boundaries, and all associated policies (AWS managed, customer managed, and inline)—in an interactive Org-mode buffer.
 
-All policy data is fetched **asynchronously and in parallel**, resulting in faster load times than previous version.
+This package uses Org Babel and the AWS CLI under the hood, allowing you to edit policies directly in the buffer and apply them to your AWS account. All initial policy data is fetched **asynchronously and in parallel**.
 
 -----
 
 ## Features
 
-  * **Inspect IAM Roles** via an interactive prompt.
-  * **Asynchronous Parallel Fetching** for faster loading of all policies.
-  * **Displays**:
-      * Trust policy
-      * Permissions boundary
-      * Customer-managed policies
-      * AWS-managed policies
-      * Inline policies
+  * **Browse and Inspect IAM Roles** via an interactive prompt.
+  * **Modify IAM Policies**: Edit policies directly in the Org buffer and apply changes by executing the source block (`C-c C-c`).
+      * Supports Trust Policies, Permissions Boundaries, Customer-Managed, AWS-Managed, and Inline policies.
+  * **Read-Only by Default**: Buffers open in a safe, read-only mode to prevent accidental changes. Toggle editing with a keypress.
+  * **Org Babel Integration** using a custom `aws-iam` language for applying changes.
+  * **Asynchronous Parallel Fetching** for fast initial loading of all policies.
   * **Org-mode Rendering** with foldable sections for easy navigation.
   * **Switch AWS CLI profiles** interactively.
   * **Authenticates via CLI** and alerts on credential issues before running commands.
@@ -27,37 +25,42 @@ All policy data is fetched **asynchronously and in parallel**, resulting in fast
   * GNU Emacs 27+
   * AWS CLI installed and in your `PATH`
   * Permissions for the following AWS IAM APIs:
-      * `get-role`
-      * `list-roles`
-      * `list-attached-role-policies`
-      * `list-role-policies`
-      * `get-policy`
-      * `get-policy-version`
-      * `get-role-policy`
-      * `sts get-caller-identity`
+      * `sts:GetCallerIdentity`
+      * `iam:GetRole`
+      * `iam:ListRoles`
+      * `iam:ListAttachedRolePolicies`
+      * `iam:ListRolePolicies`
+      * `iam:GetPolicy`
+      * `iam:GetPolicyVersion`
+      * `iam:GetRolePolicy`
+      * `iam:UpdateAssumeRolePolicy` (to modify trust policies)
+      * `iam:PutRolePolicy` (to modify inline policies)
+      * `iam:CreatePolicyVersion` (to modify managed policies)
 
-Emacs libraries used: `cl-lib`, `json`, `url-util`, `async`, `promise`.
+Emacs libraries used: `cl-lib`, `json`, `url-util`, `async`, `promise`, `ob-shell`.
 
 -----
 
 ## Usage
 
-1.  Load the package (e.g. `(require 'aws-iam-role-viewer)`)
+1.  Load the package (e.g. `(require 'org-aws-iam-role)`)
 2.  Run:
-    `M-x aws-iam-role-viewer-view-details`
+    `M-x org-aws-iam-role-view-details`
 3.  Select a role from the list.
-4.  View the detailed Org-mode output including:
-      * Role metadata
-      * Trust policy
-      * Permissions boundary
-      * All managed and inline policies
+4.  The buffer will open in read-only mode. To make changes:
+    a.  Press `C-c C-e` to toggle editable mode.
+    b.  Modify the JSON inside any policy's source block.
+    c.  Press `C-c C-c` inside the block to apply the changes to AWS.
+    d.  View the success or failure message in the `#+RESULTS:` block that appears.
 
 ### Org Buffer Keybindings
 
-| Keybinding | Description                 |
-| :--------- | :-------------------------- |
-| `C-c C-h`  | Hide all property drawers   |
-| `C-c C-r`  | Reveal all property drawers |
+| Keybinding | Description |
+| :--- | :--- |
+| `C-c C-e` | Toggle read-only mode to allow/prevent edits. |
+| `C-c C-c` | Inside a source block, apply changes to AWS. |
+| `C-c C-h` | Hide all property drawers. |
+| `C-c C-r` | Reveal all property drawers. |
 
 -----
 
@@ -66,10 +69,11 @@ Emacs libraries used: `cl-lib`, `json`, `url-util`, `async`, `promise`.
 Optional variables for customizing behavior:
 
 ```elisp
-(setq aws-iam-role-viewer-profile "my-profile") ;; Use a specific AWS CLI profile
-(setq aws-iam-role-viewer-show-folded-by-default t) ;; Show Org buffer folded by default
-(setq aws-iam-role-viewer-fullscreen nil) ;; Prevent the buffer from taking the full frame
+(setq org-aws-iam-role-profile "my-profile") ;; Use a specific AWS CLI profile
+(setq org-aws-iam-role-read-only-by-default t) ;; Open buffers in read-only mode
+(setq org-aws-iam-role-show-folded-by-default t) ;; Show Org buffer folded by default
+(setq org-aws-iam-role-fullscreen nil) ;; Prevent the buffer from taking the full frame
 ```
 
 To change the profile at runtime, you can run:
-`M-x aws-iam-role-viewer-set-profile`
+`M-x org-aws-iam-role-set-profile`
