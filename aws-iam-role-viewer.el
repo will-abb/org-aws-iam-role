@@ -517,7 +517,6 @@ rendering of role information."
     (local-set-key (kbd "C-c C-h") #'org-fold-hide-drawer-all)
     (local-set-key (kbd "C-c C-r") #'org-fold-show-all)
     (goto-char (point-min))
-    (read-only-mode 1)
     (if aws-iam-role-viewer-show-folded-by-default
         (org-overview)
       (org-fold-show-all)))
