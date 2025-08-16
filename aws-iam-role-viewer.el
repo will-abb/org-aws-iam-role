@@ -5,6 +5,8 @@
 (require 'url-util)
 (require 'async)
 (require 'promise)
+(require 'ob-shell)
+(add-to-list 'org-babel-load-languages '(shell . t))
 
 (defvar aws-iam-role-viewer-profile nil
   "Default AWS CLI profile to use for IAM role operations.
@@ -292,6 +294,59 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
           (push p customer))))
     (cons (nreverse customer) (nreverse aws))))
 
+
+(defun org-babel-execute:aws-iam (body params)
+  "Execute an aws-iam source block to update an IAM policy in AWS.
+This function is called when the user presses C-c C-c inside an
+aws-iam source block. It reads the block's content (the policy JSON)
+and header arguments to construct and run the appropriate AWS CLI command."
+  (let* ((role-name (cdr (assoc :role-name params)))
+         (policy-name (cdr (assoc :policy-name params)))
+         (policy-type-str (cdr (assoc :policy-type params)))
+         (policy-type (intern policy-type-str))
+         (policy-document body))
+
+    (unless (and role-name policy-name policy-type)
+      (user-error "Missing required header arguments: :role-name, :policy-name, or :policy-type"))
+
+    (message "Updating IAM Policy '%s' for role '%s'..." policy-name role-name)
+
+    ;; Prepare the policy document for the command line.
+    ;; It needs to be a single-line JSON string.
+    (let* ((json-string (json-encode (json-read-from-string policy-document)))
+           (cmd (cond
+                 ;; 1. Inline policies: use 'put-role-policy'.
+                 ((eq policy-type 'inline)
+                  (format "aws iam put-role-policy --role-name %s --policy-name %s --policy-document %s%s"
+                          (shell-quote-argument role-name)
+                          (shell-quote-argument policy-name)
+                          (shell-quote-argument json-string)
+                          (aws-iam-role-viewer--cli-profile-arg)))
+
+                 ;; 2. Managed policies: create a new policy version.
+                 ((or (eq policy-type 'customer-managed) (eq policy-type 'aws-managed))
+                  (let ((policy-arn (cdr (assoc :arn params))))
+                    (unless policy-arn
+                      (user-error "Missing required header argument for managed policy: :arn"))
+                    (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
+                            (shell-quote-argument policy-arn)
+                            (shell-quote-argument json-string)
+                            (aws-iam-role-viewer--cli-profile-arg))))
+
+                 ;; 3. Permissions Boundary: is a managed policy.
+                 ((eq policy-type 'permissions-boundary)
+                  (let ((policy-arn (cdr (assoc :arn params))))
+                    (unless policy-arn
+                      (user-error "Missing required header argument for boundary policy: :arn"))
+                    (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
+                            (shell-quote-argument policy-arn)
+                            (shell-quote-argument json-string)
+                            (aws-iam-role-viewer--cli-profile-arg))))
+
+                 (t (user-error "Unsupported policy type for modification: %s" policy-type)))))
+      ;; Execute the command asynchronously to avoid freezing Emacs.
+      (async-shell-command cmd "*AWS IAM Update Output*")
+      (message "Policy update command sent to AWS for '%s'." policy-name))))
 
 ;;; Display Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
