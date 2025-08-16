@@ -5,6 +5,11 @@
 (require 'url-util)
 (require 'async)
 (require 'promise)
+(require 'ob-shell)
+
+(add-to-list 'org-babel-load-languages '(shell . t))
+(add-to-list 'org-src-lang-modes '("aws-iam" . json))
+(add-to-list 'org-src-lang-modes '("json" . json))
 
 (defvar aws-iam-role-viewer-profile nil
   "Default AWS CLI profile to use for IAM role operations.
@@ -15,6 +20,9 @@ If nil, uses default profile or environment credentials.")
 
 (defvar aws-iam-role-viewer-fullscreen t
   "If non-nil, show the IAM role buffer in fullscreen.")
+
+(defvar aws-iam-role-viewer-read-only-by-default t
+  "If non-nil, role viewer buffers will be read-only by default.")
 
 ;;;###autoload
 (defun aws-iam-role-viewer-view-details ()
@@ -35,6 +43,17 @@ If nil, uses default profile or environment credentials.")
     (setq aws-iam-role-viewer-profile
           (completing-read "Select AWS profile: " profiles nil t))
     (message "Set IAM Role AWS profile to: %s" aws-iam-role-viewer-profile)))
+
+(defun aws-iam-role-viewer-toggle-read-only ()
+  "Toggle read-only mode in the current buffer and provide feedback."
+  (interactive)
+  (if buffer-read-only
+      (progn
+        (read-only-mode -1)
+        (message "Buffer is now editable."))
+    (progn
+      (read-only-mode 1)
+      (message "Buffer is now read-only."))))
 
 ;;; Internal Helpers & Structs
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -293,6 +312,70 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
     (cons (nreverse customer) (nreverse aws))))
 
 
+(defun org-babel-execute:aws-iam (body params)
+  "Execute an aws-iam source block to update an IAM policy in AWS.
+This function is called when the user presses C-c C-c inside an
+aws-iam source block. It reads the block's content (the policy JSON)
+and header arguments to construct and run the appropriate AWS CLI command."
+  (when buffer-read-only
+    (user-error "Buffer is read-only. Press C-c C-e to enable edits and execution."))
+  (let* ((role-name (cdr (assoc :role-name params)))
+         (policy-name (cdr (assoc :policy-name params)))
+         (policy-type-str (cdr (assoc :policy-type params)))
+         (policy-type (intern policy-type-str))
+         (policy-document body))
+
+    (unless (and role-name policy-type)
+      (user-error "Missing required header arguments: :role-name or :policy-type"))
+
+    (message "Updating IAM Policy '%s' for role '%s'..." (or policy-name "TrustPolicy") role-name)
+
+    ;; Prepare the policy document for the command line.
+    ;; It needs to be a single-line JSON string.
+    (let* ((json-string (json-encode (json-read-from-string policy-document)))
+           (cmd (cond
+                 ;; 1. Trust policies: use 'update-assume-role-policy'.
+                 ((eq policy-type 'trust-policy)
+                  (format "aws iam update-assume-role-policy --role-name %s --policy-document %s%s"
+                          (shell-quote-argument role-name)
+                          (shell-quote-argument json-string)
+                          (aws-iam-role-viewer--cli-profile-arg)))
+
+                 ;; 2. Inline policies: use 'put-role-policy'.
+                 ((eq policy-type 'inline)
+                  (format "aws iam put-role-policy --role-name %s --policy-name %s --policy-document %s%s"
+                          (shell-quote-argument role-name)
+                          (shell-quote-argument policy-name)
+                          (shell-quote-argument json-string)
+                          (aws-iam-role-viewer--cli-profile-arg)))
+
+                 ;; 3. Managed policies: create a new policy version.
+                 ((or (eq policy-type 'customer-managed) (eq policy-type 'aws-managed))
+                  (let ((policy-arn (cdr (assoc :arn params))))
+                    (unless policy-arn
+                      (user-error "Missing required header argument for managed policy: :arn"))
+                    (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
+                            (shell-quote-argument policy-arn)
+                            (shell-quote-argument json-string)
+                            (aws-iam-role-viewer--cli-profile-arg))))
+
+                 ;; 4. Permissions Boundary: is a managed policy.
+                 ((eq policy-type 'permissions-boundary)
+                  (let ((policy-arn (cdr (assoc :arn params))))
+                    (unless policy-arn
+                      (user-error "Missing required header argument for boundary policy: :arn"))
+                    (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
+                            (shell-quote-argument policy-arn)
+                            (shell-quote-argument json-string)
+                            (aws-iam-role-viewer--cli-profile-arg))))
+
+                 (t (user-error "Unsupported policy type for modification: %s" policy-type)))))
+      ;; Execute command, get output, and return "Success!" if output is empty.
+      (let ((result (string-trim (shell-command-to-string cmd))))
+        (if (string-empty-p result)
+            "Success!"
+          result)))))
+
 ;;; Display Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -315,9 +398,10 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
 
 (defun aws-iam-role-viewer-insert-trust-policy (role)
   "Insert the trust policy section into the buffer."
-  (let ((trust-policy-json (json-encode (aws-iam-role-viewer-trust-policy role))))
+  (let ((trust-policy-json (json-encode (aws-iam-role-viewer-trust-policy role)))
+        (role-name (aws-iam-role-viewer-name role)))
     (insert "** Trust Policy\n")
-    (insert "#+BEGIN_SRC json\n")
+    (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-type \"trust-policy\" :results output\n" role-name))
     (let ((start (point)))
       (insert trust-policy-json)
       ;; Don't let a JSON formatting error stop buffer creation.
@@ -334,14 +418,16 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
         ((eq policy-type-symbol 'permissions-boundary) "Permissions Boundary")
         (t (capitalize (symbol-name policy-type-symbol)))))
 
-(defun aws-iam-role-viewer--insert-policy-struct-details (policy)
+(defun aws-iam-role-viewer--insert-policy-struct-details (policy role-name)
   "Insert the details of a pre-fetched `aws-iam-policy' struct into the buffer."
-  (let ((doc-json (json-encode (aws-iam-policy-document policy))))
+  (let* ((doc-json (json-encode (aws-iam-policy-document policy)))
+         (policy-type-symbol (aws-iam-policy-policy-type policy))
+         (policy-arn (or (aws-iam-policy-arn policy) "")))
     (insert (format "*** %s\n" (aws-iam-policy-name policy)))
     (insert ":PROPERTIES:\n")
-    (insert (format ":AWSPolicyType: %s\n" (aws-iam-role-viewer--format-policy-type (aws-iam-policy-policy-type policy))))
+    (insert (format ":AWSPolicyType: %s\n" (aws-iam-role-viewer--format-policy-type policy-type-symbol)))
     (insert (format ":ID: %s\n" (or (aws-iam-policy-id policy) "nil")))
-    (insert (format ":ARN: %s\n" (or (aws-iam-policy-arn policy) "nil")))
+    (insert (format ":ARN: %s\n" (or policy-arn "nil")))
     (insert (format ":Path: %s\n" (or (aws-iam-policy-path policy) "nil")))
     (insert (format ":Description: %s\n" (or (aws-iam-policy-description policy) "nil")))
     (insert (format ":Created: %s\n" (or (aws-iam-policy-create-date policy) "nil")))
@@ -349,8 +435,11 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
     (insert (format ":AttachmentCount: %s\n" (or (aws-iam-policy-attachment-count policy) "nil")))
     (insert (format ":DefaultVersion: %s\n" (or (aws-iam-policy-default-version-id policy) "nil")))
     (insert ":END:\n")
-    (insert "Policy Document:\n")
-    (insert "#+BEGIN_SRC json\n")
+    (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-name \"%s\" :policy-type \"%s\" :arn \"%s\" :results output\n"
+                    role-name
+                    (aws-iam-policy-name policy)
+                    (symbol-name policy-type-symbol)
+                    policy-arn))
     (let ((start (point)))
       (insert doc-json)
       (condition-case e
@@ -389,7 +478,7 @@ are found."
     (when all-promises
       (promise-all all-promises))))
 
-(defun aws-iam-role-viewer--insert-policies-section (all-policies-vector boundary-arn)
+(defun aws-iam-role-viewer--insert-policies-section (all-policies-vector boundary-arn role-name)
   "Render a vector of fetched policies into the current buffer.
 ALL-POLICIES-VECTOR is the result from a `promise-all' call.
 BOUNDARY-ARN is the original ARN of the boundary policy, used
@@ -404,14 +493,14 @@ to determine if the section header should be rendered."
     ;; 1. Render Permission Policies (AWS, Customer, Inline)
     (insert "** Permission Policies\n")
     (if permission-policies
-        (dolist (p permission-policies) (aws-iam-role-viewer--insert-policy-struct-details p))
+        (dolist (p permission-policies) (aws-iam-role-viewer--insert-policy-struct-details p role-name))
       (insert "nil\n"))
 
     ;; 2. Render Permissions Boundary Policy
     (when boundary-arn
       (insert "** Permissions Boundary Policy\n")
       (if boundary-policy
-          (aws-iam-role-viewer--insert-policy-struct-details boundary-policy)
+          (aws-iam-role-viewer--insert-policy-struct-details boundary-policy role-name)
         (insert "Failed to fetch permissions boundary policy.\n")))))
 
 (defun aws-iam-role-viewer-populate-role-buffer (role buf)
@@ -421,14 +510,26 @@ rendering of role information."
   (with-current-buffer buf
     (erase-buffer)
     (org-mode)
-    (aws-iam-role-viewer-insert-role-header role)
-    (insert "\n;; --- Keybinds --- \n")
-    (insert ";; C-c C-h : Hide all property drawers\n")
-    (insert ";; C-c C-r : Reveal all property drawers\n\n"))
+    (setq-local org-src-fontify-natively t)
+    ;; 1. Insert the Usage and Keybindings section first.
+    (insert "* Usage\n")
+    (insert "** Applying Changes\n")
+    (insert "By default, this buffer is in read-only mode to prevent accidents. ")
+    (insert "Press =C-c C-e= to toggle editable mode.\n")
+    (insert "To modify a policy, edit the content of its source block and press =C-c C-c= inside the block. ")
+    (insert "This will execute the corresponding AWS CLI command to apply your changes.\n")
+    (insert "** Keybindings\n")
+    (insert "- =C-c C-e= :: Toggle read-only mode to allow/prevent edits.\n")
+    (insert "- =C-c C-c= :: Inside a source block, apply changes to AWS.\n")
+    (insert "- =C-c C-h= :: Hide all property drawers.\n")
+    (insert "- =C-c C-r= :: Reveal all property drawers.\n\n")
+    ;; 2. Insert the main IAM Role header next.
+    (aws-iam-role-viewer-insert-role-header role))
 
   ;; Asynchronously fetch all policies for the role.
   (let ((policies-promise (aws-iam-role-viewer--get-all-policies-async role))
-        (boundary-arn (aws-iam-role-viewer-permissions-boundary-arn role)))
+        (boundary-arn (aws-iam-role-viewer-permissions-boundary-arn role))
+        (role-name (aws-iam-role-viewer-name role)))
     ;; If there are policies, wait for them and then render. Otherwise, render the empty state.
     (if policies-promise
         (promise-then
@@ -438,7 +539,7 @@ rendering of role information."
            (condition-case e
                (with-current-buffer buf
                  ;; Insert the fetched policy sections.
-                 (aws-iam-role-viewer--insert-policies-section all-policies-vector boundary-arn)
+                 (aws-iam-role-viewer--insert-policies-section all-policies-vector boundary-arn role-name)
                  ;; Insert remaining synchronous sections and finalize the buffer.
                  (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf))
              (error nil))))
@@ -451,10 +552,12 @@ rendering of role information."
 (defun aws-iam-role-viewer-finalize-and-display-role-buffer (buf)
   "Set keybinds, mode, and display the buffer BUF."
   (with-current-buffer buf
+    (local-set-key (kbd "C-c C-e") #'aws-iam-role-viewer-toggle-read-only)
     (local-set-key (kbd "C-c C-h") #'org-fold-hide-drawer-all)
     (local-set-key (kbd "C-c C-r") #'org-fold-show-all)
     (goto-char (point-min))
-    (read-only-mode 1)
+    (when aws-iam-role-viewer-read-only-by-default
+      (read-only-mode 1))
     (if aws-iam-role-viewer-show-folded-by-default
         (org-overview)
       (org-fold-show-all)))
