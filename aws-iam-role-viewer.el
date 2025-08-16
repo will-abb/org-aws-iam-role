@@ -389,14 +389,16 @@ and header arguments to construct and run the appropriate AWS CLI command."
         ((eq policy-type-symbol 'permissions-boundary) "Permissions Boundary")
         (t (capitalize (symbol-name policy-type-symbol)))))
 
-(defun aws-iam-role-viewer--insert-policy-struct-details (policy)
+(defun aws-iam-role-viewer--insert-policy-struct-details (policy role-name)
   "Insert the details of a pre-fetched `aws-iam-policy' struct into the buffer."
-  (let ((doc-json (json-encode (aws-iam-policy-document policy))))
+  (let* ((doc-json (json-encode (aws-iam-policy-document policy)))
+         (policy-type-symbol (aws-iam-policy-policy-type policy))
+         (policy-arn (or (aws-iam-policy-arn policy) "")))
     (insert (format "*** %s\n" (aws-iam-policy-name policy)))
     (insert ":PROPERTIES:\n")
-    (insert (format ":AWSPolicyType: %s\n" (aws-iam-role-viewer--format-policy-type (aws-iam-policy-policy-type policy))))
+    (insert (format ":AWSPolicyType: %s\n" (aws-iam-role-viewer--format-policy-type policy-type-symbol)))
     (insert (format ":ID: %s\n" (or (aws-iam-policy-id policy) "nil")))
-    (insert (format ":ARN: %s\n" (or (aws-iam-policy-arn policy) "nil")))
+    (insert (format ":ARN: %s\n" (or policy-arn "nil")))
     (insert (format ":Path: %s\n" (or (aws-iam-policy-path policy) "nil")))
     (insert (format ":Description: %s\n" (or (aws-iam-policy-description policy) "nil")))
     (insert (format ":Created: %s\n" (or (aws-iam-policy-create-date policy) "nil")))
@@ -404,8 +406,13 @@ and header arguments to construct and run the appropriate AWS CLI command."
     (insert (format ":AttachmentCount: %s\n" (or (aws-iam-policy-attachment-count policy) "nil")))
     (insert (format ":DefaultVersion: %s\n" (or (aws-iam-policy-default-version-id policy) "nil")))
     (insert ":END:\n")
-    (insert "Policy Document:\n")
-    (insert "#+BEGIN_SRC json\n")
+    (insert "Policy Document (C-c C-c to apply changes):\n")
+
+    (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-name \"%s\" :policy-type \"%s\" :arn \"%s\"\n"
+                    role-name
+                    (aws-iam-policy-name policy)
+                    (symbol-name policy-type-symbol)
+                    policy-arn))
     (let ((start (point)))
       (insert doc-json)
       (condition-case e
@@ -444,7 +451,7 @@ are found."
     (when all-promises
       (promise-all all-promises))))
 
-(defun aws-iam-role-viewer--insert-policies-section (all-policies-vector boundary-arn)
+(defun aws-iam-role-viewer--insert-policies-section (all-policies-vector boundary-arn role-name)
   "Render a vector of fetched policies into the current buffer.
 ALL-POLICIES-VECTOR is the result from a `promise-all' call.
 BOUNDARY-ARN is the original ARN of the boundary policy, used
@@ -459,14 +466,14 @@ to determine if the section header should be rendered."
     ;; 1. Render Permission Policies (AWS, Customer, Inline)
     (insert "** Permission Policies\n")
     (if permission-policies
-        (dolist (p permission-policies) (aws-iam-role-viewer--insert-policy-struct-details p))
+        (dolist (p permission-policies) (aws-iam-role-viewer--insert-policy-struct-details p role-name))
       (insert "nil\n"))
 
     ;; 2. Render Permissions Boundary Policy
     (when boundary-arn
       (insert "** Permissions Boundary Policy\n")
       (if boundary-policy
-          (aws-iam-role-viewer--insert-policy-struct-details boundary-policy)
+          (aws-iam-role-viewer--insert-policy-struct-details boundary-policy role-name)
         (insert "Failed to fetch permissions boundary policy.\n")))))
 
 (defun aws-iam-role-viewer-populate-role-buffer (role buf)
@@ -483,7 +490,8 @@ rendering of role information."
 
   ;; Asynchronously fetch all policies for the role.
   (let ((policies-promise (aws-iam-role-viewer--get-all-policies-async role))
-        (boundary-arn (aws-iam-role-viewer-permissions-boundary-arn role)))
+        (boundary-arn (aws-iam-role-viewer-permissions-boundary-arn role))
+        (role-name (aws-iam-role-viewer-name role)))
     ;; If there are policies, wait for them and then render. Otherwise, render the empty state.
     (if policies-promise
         (promise-then
@@ -493,7 +501,7 @@ rendering of role information."
            (condition-case e
                (with-current-buffer buf
                  ;; Insert the fetched policy sections.
-                 (aws-iam-role-viewer--insert-policies-section all-policies-vector boundary-arn)
+                 (aws-iam-role-viewer--insert-policies-section all-policies-vector boundary-arn role-name)
                  ;; Insert remaining synchronous sections and finalize the buffer.
                  (aws-iam-role-viewer--insert-remaining-sections-and-finalize role buf))
              (error nil))))
