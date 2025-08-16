@@ -39,15 +39,15 @@
 ;; Features include:
 ;; - Interactive browsing and selection of IAM roles.
 ;; - Full display of all policy types: Trust Policy, Permissions Boundary,
-;;   AWS-Managed, Customer-Managed, and Inline policies.
+;; AWS-Managed, Customer-Managed, and Inline policies.
 ;; - Direct modification of any policy through Org Babel source blocks.
 ;; - Asynchronous fetching of initial role and policy data for a fast UI.
 ;; - Safe by default: buffer opens in read-only mode to prevent accidents.
 ;; - Clear feedback on command success or failure in Babel results blocks.
 ;; - Integrated keybindings for a smooth workflow:
-;;   - C-c C-e: Toggle read-only mode to enable/disable editing.
-;;   - C-c C-c: Apply changes for the policy under the cursor to AWS.
-;;   - C-c C-h / C-c C-r: Hide or reveal all property drawers.
+;; - C-c C-e: Toggle read-only mode to enable/disable editing.
+;; - C-c C-c: Apply changes for the policy under the cursor to AWS.
+;; - C-c C-h / C-c C-r: Hide or reveal all property drawers.
 
 ;;; Code:
 
@@ -116,7 +116,7 @@ If nil, uses default profile or environment credentials.")
     ""))
 
 (defun org-aws-iam-role-check-auth ()
-  "Ensure the user is authenticated with AWS. Raise error if not."
+  "Ensure the user is authenticated with AWS, raising an error if not."
   (let* ((cmd (format "aws sts get-caller-identity --output json%s"
                       (org-aws-iam-role--cli-profile-arg)))
          (exit-code (shell-command cmd nil nil)))
@@ -125,9 +125,11 @@ If nil, uses default profile or environment credentials.")
       (user-error "AWS CLI not authenticated: please check your credentials or AWS_PROFILE"))))
 
 (defun org-aws-iam-role-format-tags (tags)
-  "Format AWS tags from a list of alists into a single JSON string."
+  "Format AWS TAGS from a list of alists into a single JSON string.
+
+Argument TAGS is a list of alists of the form
+\(\(\"Key\" . \"k1\"\) \(\"Value\" . \"v1\"\)\)."
   (when tags
-    ;; AWS tags are a list of alists, e.g., '((Key . "k1") (Value . "v1")).
     ;; We simplify this to a single alist '(( "k1" . "v1" )) for easier JSON encoding.
     (let ((simple-alist (mapcar (lambda (tag)
                                   (cons (alist-get 'Key tag)
@@ -169,8 +171,10 @@ If nil, uses default profile or environment credentials.")
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun aws-iam-policy-get-metadata-async (policy-arn)
-  "Fetch policy metadata JSON asynchronously from AWS using `get-policy`.
-Returns a promise that resolves with the raw JSON string."
+  "Fetch policy metadata JSON asynchronously for POLICY-ARN.
+
+Returns a promise that resolves with the raw JSON string from the
+`get-policy` command."
   (let* ((cmd (format "aws iam get-policy --policy-arn %s --output json%s"
                       (shell-quote-argument policy-arn)
                       (org-aws-iam-role--cli-profile-arg)))
@@ -178,7 +182,9 @@ Returns a promise that resolves with the raw JSON string."
     (promise:async-start start-func)))
 
 (defun aws-iam-policy-get-version-document-async (policy-arn version-id)
-  "Fetch policy document JSON asynchronously using `get-policy-version`.
+  "Fetch policy document JSON for POLICY-ARN and VERSION-ID.
+
+This is an asynchronous operation using `get-policy-version`.
 Returns a promise that resolves with the raw JSON string."
   (let* ((cmd (format "aws iam get-policy-version --policy-arn %s --version-id %s --output json%s"
                       (shell-quote-argument policy-arn)
@@ -189,6 +195,7 @@ Returns a promise that resolves with the raw JSON string."
 
 (defun aws-iam-policy--construct-from-data (metadata policy-type document-json)
   "Construct an `aws-iam-policy' struct from resolved data.
+
 METADATA is the parsed 'Policy' alist from `get-policy`.
 POLICY-TYPE is the type symbol (e.g., 'aws-managed).
 DOCUMENT-JSON is the raw JSON string from `get-policy-version`."
@@ -216,6 +223,9 @@ DOCUMENT-JSON is the raw JSON string from `get-policy-version`."
 
 (defun aws-iam-policy-from-arn-async (policy-arn policy-type)
   "Create an `aws-iam-policy' struct asynchronously from a policy ARN.
+
+Argument POLICY-ARN is the ARN of the IAM policy.
+Argument POLICY-TYPE is the type of the IAM policy.
 Returns a promise that resolves with the complete `aws-iam-policy` struct."
   (promise-chain
       ;; Step 1: Fetch the policy metadata.
@@ -245,6 +255,7 @@ Returns a promise that resolves with the complete `aws-iam-policy` struct."
 
 (defun aws-iam-inline-policy--construct-from-json (policy-name json)
   "Construct an inline `aws-iam-policy' struct from its JSON representation.
+
 POLICY-NAME is the name of the inline policy. JSON is the raw
 string from the `get-role-policy` AWS CLI command."
   (let* ((parsed (json-parse-string json :object-type 'alist :array-type 'list))
@@ -261,6 +272,9 @@ string from the `get-role-policy` AWS CLI command."
 
 (defun aws-iam-inline-policy-from-name-async (role-name policy-name)
   "Fetch an inline policy asynchronously and construct an `aws-iam-policy' struct.
+
+Argument ROLE-NAME is the name of the IAM role.
+Argument POLICY-NAME is the name of the inline policy.
 Returns a promise that resolves with the struct."
   (let* ((cmd (format "aws iam get-role-policy --role-name %s --policy-name %s --output json%s"
                       (shell-quote-argument role-name)
@@ -277,6 +291,7 @@ Returns a promise that resolves with the struct."
 
 (defun org-aws-iam-role--fetch-roles-page (marker)
   "Fetch a single page of IAM roles from AWS.
+
 If MARKER is non-nil, it's used as the `--starting-token`.
 Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (let* ((cmd (format "aws iam list-roles --output json%s%s"
@@ -305,7 +320,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
     (mapcar (lambda (r) (alist-get 'RoleName r)) all-roles)))
 
 (defun org-aws-iam-role-get-full (role-name)
-  "Fetch full IAM role object from AWS using `get-role`."
+  "Fetch full IAM role object for ROLE-NAME from AWS using `get-role`."
   (let* ((cmd (format "aws iam get-role --role-name %s --output json%s"
                       (shell-quote-argument role-name)
                       (org-aws-iam-role--cli-profile-arg)))
@@ -314,7 +329,9 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
     parsed))
 
 (defun org-aws-iam-role-construct (obj)
-  "Create an `org-aws-iam-role` struct from a full `get-role` object."
+  "Create an `org-aws-iam-role` struct from a full `get-role` object.
+
+Argument OBJ is the JSON object returned by `get-role`."
   ;; PermissionsBoundary and RoleLastUsed can be nil, so we get them first.
   (let ((pb (alist-get 'PermissionsBoundary obj))
         (last-used (alist-get 'RoleLastUsed obj)))
@@ -352,7 +369,9 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
     (alist-get 'PolicyNames parsed)))
 
 (defun org-aws-iam-role-split-managed-policies (attached)
-  "Split ATTACHED managed policies into (customer . aws) buckets, keeping full alist per item."
+  "Split ATTACHED managed policies into (customer . aws) buckets.
+
+Each bucket keeps the full alist for each policy item."
   (let ((customer '()) (aws '()))
     (dolist (p attached)
       (let ((arn (alist-get 'PolicyArn p)))
@@ -365,11 +384,16 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
 
 (defun org-babel-execute:aws-iam (body params)
   "Execute an aws-iam source block to update an IAM policy in AWS.
-This function is called when the user presses C-c C-c inside an
-aws-iam source block. It reads the block's content (the policy JSON)
-and header arguments to construct and run the appropriate AWS CLI command."
+
+This function is called when the user executes the source block,
+for example, with Org Mode’s standard key binding. It reads the
+block's BODY and PARAMS to construct and run the appropriate
+AWS CLI command.
+
+Argument BODY is the contents of the source block.
+Argument PARAMS is the list of header arguments passed to the block."
   (when buffer-read-only
-    (user-error "Buffer is read-only. Press C-c C-e to enable edits and execution."))
+    (user-error "Buffer is read-only. Press C-c C-e to enable edits and execution"))
   (let* ((role-name (cdr (assoc :role-name params)))
          (policy-name (cdr (assoc :policy-name params)))
          (policy-type-str (cdr (assoc :policy-type params)))
@@ -431,7 +455,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun org-aws-iam-role-insert-role-header (role)
-  "Insert the main role heading and properties into the buffer."
+  "Insert the main heading and properties for ROLE into the buffer."
   (insert (format "* IAM Role: %s\n" (org-aws-iam-role-name role)))
   (insert ":PROPERTIES:\n")
   (insert (format ":ARN: %s\n" (org-aws-iam-role-arn role)))
@@ -448,7 +472,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
   (insert ":END:\n"))
 
 (defun org-aws-iam-role-insert-trust-policy (role)
-  "Insert the trust policy section into the buffer."
+  "Insert the trust policy section for ROLE into the buffer."
   (let ((trust-policy-json (json-encode (org-aws-iam-role-trust-policy role)))
         (role-name (org-aws-iam-role-name role)))
     (insert "** Trust Policy\n")
@@ -462,7 +486,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
     (insert "\n#+END_SRC\n")))
 
 (defun org-aws-iam-role--format-policy-type (policy-type-symbol)
-  "Format the policy type symbol into a human-readable string."
+  "Format POLICY-TYPE-SYMBOL into a human-readable string."
   (cond ((eq policy-type-symbol 'aws-managed) "AWS Managed")
         ((eq policy-type-symbol 'customer-managed) "Customer Managed")
         ((eq policy-type-symbol 'inline) "Inline")
@@ -470,7 +494,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
         (t (capitalize (symbol-name policy-type-symbol)))))
 
 (defun org-aws-iam-role--insert-policy-struct-details (policy role-name)
-  "Insert the details of a pre-fetched `aws-iam-policy' struct into the buffer."
+  "Insert details of a POLICY struct into the buffer for ROLE-NAME."
   (let* ((doc-json (json-encode (aws-iam-policy-document policy)))
          (policy-type-symbol (aws-iam-policy-policy-type policy))
          (policy-arn (or (aws-iam-policy-arn policy) "")))
@@ -499,16 +523,17 @@ and header arguments to construct and run the appropriate AWS CLI command."
     (insert "\n#+END_SRC\n")))
 
 (defun org-aws-iam-role--insert-remaining-sections-and-finalize (role buf)
-  "Insert remaining sync sections and finalize buffer display."
+  "Insert remaining sections for ROLE and finalize display of BUF."
   (with-current-buffer buf
     (org-aws-iam-role-insert-trust-policy role))
   (org-aws-iam-role-finalize-and-display-role-buffer buf))
 
 (defun org-aws-iam-role--get-all-policies-async (role)
   "Fetch all attached, inline, and boundary policies for ROLE.
+
 This function is asynchronous and returns a single promise that
 resolves with a vector of `aws-iam-policy' structs when all
-underlying fetches are complete. Returns nil if no policies
+underlying fetches are complete.  Returns nil if no policies
 are found."
   (let* ((role-name (org-aws-iam-role-name role))
          ;; 1. Get lists of all policy identifiers first
@@ -531,9 +556,10 @@ are found."
 
 (defun org-aws-iam-role--insert-policies-section (all-policies-vector boundary-arn role-name)
   "Render a vector of fetched policies into the current buffer.
+
 ALL-POLICIES-VECTOR is the result from a `promise-all' call.
-BOUNDARY-ARN is the original ARN of the boundary policy, used
-to determine if the section header should be rendered."
+BOUNDARY-ARN is the original ARN of the boundary policy.
+ROLE-NAME is the name of the parent IAM role."
   (let* ((policies-list (seq-into all-policies-vector 'list))
          ;; Filter out any nil results from promises that may have failed gracefully.
          (valid-policies (cl-remove-if-not #'identity policies-list))
@@ -555,9 +581,10 @@ to determine if the section header should be rendered."
         (insert "Failed to fetch permissions boundary policy.\n")))))
 
 (defun org-aws-iam-role-populate-role-buffer (role buf)
-  "Insert all role details and policies into the buffer BUF.
-This function orchestrates the asynchronous fetching and
-rendering of role information."
+  "Insert all details for ROLE and its policies into the buffer BUF.
+
+This function orchestrates the asynchronous fetching and rendering of role
+information."
   (with-current-buffer buf
     (erase-buffer)
     (org-mode)
