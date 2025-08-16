@@ -309,16 +309,23 @@ and header arguments to construct and run the appropriate AWS CLI command."
          (policy-type (intern policy-type-str))
          (policy-document body))
 
-    (unless (and role-name policy-name policy-type)
-      (user-error "Missing required header arguments: :role-name, :policy-name, or :policy-type"))
+    (unless (and role-name policy-type)
+      (user-error "Missing required header arguments: :role-name or :policy-type"))
 
-    (message "Updating IAM Policy '%s' for role '%s'..." policy-name role-name)
+    (message "Updating IAM Policy '%s' for role '%s'..." (or policy-name "TrustPolicy") role-name)
 
     ;; Prepare the policy document for the command line.
     ;; It needs to be a single-line JSON string.
     (let* ((json-string (json-encode (json-read-from-string policy-document)))
            (cmd (cond
-                 ;; 1. Inline policies: use 'put-role-policy'.
+                 ;; 1. Trust policies: use 'update-assume-role-policy'.
+                 ((eq policy-type 'trust-policy)
+                  (format "aws iam update-assume-role-policy --role-name %s --policy-document %s%s"
+                          (shell-quote-argument role-name)
+                          (shell-quote-argument json-string)
+                          (aws-iam-role-viewer--cli-profile-arg)))
+
+                 ;; 2. Inline policies: use 'put-role-policy'.
                  ((eq policy-type 'inline)
                   (format "aws iam put-role-policy --role-name %s --policy-name %s --policy-document %s%s"
                           (shell-quote-argument role-name)
@@ -326,7 +333,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
                           (shell-quote-argument json-string)
                           (aws-iam-role-viewer--cli-profile-arg)))
 
-                 ;; 2. Managed policies: create a new policy version.
+                 ;; 3. Managed policies: create a new policy version.
                  ((or (eq policy-type 'customer-managed) (eq policy-type 'aws-managed))
                   (let ((policy-arn (cdr (assoc :arn params))))
                     (unless policy-arn
@@ -336,7 +343,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
                             (shell-quote-argument json-string)
                             (aws-iam-role-viewer--cli-profile-arg))))
 
-                 ;; 3. Permissions Boundary: is a managed policy.
+                 ;; 4. Permissions Boundary: is a managed policy.
                  ((eq policy-type 'permissions-boundary)
                   (let ((policy-arn (cdr (assoc :arn params))))
                     (unless policy-arn
@@ -349,7 +356,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
                  (t (user-error "Unsupported policy type for modification: %s" policy-type)))))
       ;; Execute the command asynchronously to avoid freezing Emacs.
       (async-shell-command cmd "*AWS IAM Update Output*")
-      (message "Policy update command sent to AWS for '%s'." policy-name))))
+      (message "Policy update command sent to AWS for '%s'." (or policy-name "TrustPolicy")))))
 
 ;;; Display Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -373,9 +380,10 @@ and header arguments to construct and run the appropriate AWS CLI command."
 
 (defun aws-iam-role-viewer-insert-trust-policy (role)
   "Insert the trust policy section into the buffer."
-  (let ((trust-policy-json (json-encode (aws-iam-role-viewer-trust-policy role))))
+  (let ((trust-policy-json (json-encode (aws-iam-role-viewer-trust-policy role)))
+        (role-name (aws-iam-role-viewer-name role)))
     (insert "** Trust Policy\n")
-    (insert "#+BEGIN_SRC json\n")
+    (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-type \"trust-policy\"\n" role-name))
     (let ((start (point)))
       (insert trust-policy-json)
       ;; Don't let a JSON formatting error stop buffer creation.
@@ -409,7 +417,6 @@ and header arguments to construct and run the appropriate AWS CLI command."
     (insert (format ":AttachmentCount: %s\n" (or (aws-iam-policy-attachment-count policy) "nil")))
     (insert (format ":DefaultVersion: %s\n" (or (aws-iam-policy-default-version-id policy) "nil")))
     (insert ":END:\n")
-    (insert "Policy Document (C-c C-c to apply changes):\n")
 
     (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-name \"%s\" :policy-type \"%s\" :arn \"%s\"\n"
                     role-name
@@ -486,10 +493,15 @@ rendering of role information."
   (with-current-buffer buf
     (erase-buffer)
     (org-mode)
+    (setq-local org-src-fontify-natively t)
     (aws-iam-role-viewer-insert-role-header role)
-    (insert "\n;; --- Keybinds --- \n")
-    (insert ";; C-c C-h : Hide all property drawers\n")
-    (insert ";; C-c C-r : Reveal all property drawers\n\n"))
+    (insert "\n* Usage\n")
+    (insert "** Applying Changes\n")
+    (insert "To modify a policy, edit the content of its source block and press =C-c C-c= inside the block. ")
+    (insert "This will execute the corresponding AWS CLI command to apply your changes.\n")
+    (insert "** Keybindings\n")
+    (insert "- =C-c C-h= :: Hide all property drawers.\n")
+    (insert "- =C-c C-r= :: Reveal all property drawers.\n\n"))
 
   ;; Asynchronously fetch all policies for the role.
   (let ((policies-promise (aws-iam-role-viewer--get-all-policies-async role))
