@@ -354,9 +354,8 @@ and header arguments to construct and run the appropriate AWS CLI command."
                             (aws-iam-role-viewer--cli-profile-arg))))
 
                  (t (user-error "Unsupported policy type for modification: %s" policy-type)))))
-      ;; Execute the command asynchronously to avoid freezing Emacs.
-      (async-shell-command cmd "*AWS IAM Update Output*")
-      (message "Policy update command sent to AWS for '%s'." (or policy-name "TrustPolicy")))))
+      ;; Execute synchronously and return output for the #+RESULTS: block.
+      (shell-command-to-string cmd))))
 
 ;;; Display Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -383,7 +382,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
   (let ((trust-policy-json (json-encode (aws-iam-role-viewer-trust-policy role)))
         (role-name (aws-iam-role-viewer-name role)))
     (insert "** Trust Policy\n")
-    (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-type \"trust-policy\"\n" role-name))
+    (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-type \"trust-policy\" :results output\n" role-name))
     (let ((start (point)))
       (insert trust-policy-json)
       ;; Don't let a JSON formatting error stop buffer creation.
@@ -417,8 +416,7 @@ and header arguments to construct and run the appropriate AWS CLI command."
     (insert (format ":AttachmentCount: %s\n" (or (aws-iam-policy-attachment-count policy) "nil")))
     (insert (format ":DefaultVersion: %s\n" (or (aws-iam-policy-default-version-id policy) "nil")))
     (insert ":END:\n")
-
-    (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-name \"%s\" :policy-type \"%s\" :arn \"%s\"\n"
+    (insert (format "#+BEGIN_SRC aws-iam :role-name \"%s\" :policy-name \"%s\" :policy-type \"%s\" :arn \"%s\" :results output\n"
                     role-name
                     (aws-iam-policy-name policy)
                     (symbol-name policy-type-symbol)
@@ -494,14 +492,17 @@ rendering of role information."
     (erase-buffer)
     (org-mode)
     (setq-local org-src-fontify-natively t)
-    (aws-iam-role-viewer-insert-role-header role)
-    (insert "\n* Usage\n")
+    ;; 1. Insert the Usage and Keybindings section first.
+    (insert "* Usage\n")
     (insert "** Applying Changes\n")
     (insert "To modify a policy, edit the content of its source block and press =C-c C-c= inside the block. ")
     (insert "This will execute the corresponding AWS CLI command to apply your changes.\n")
     (insert "** Keybindings\n")
+    (insert "- =C-c C-c= :: Inside a source block, apply changes to AWS.\n")
     (insert "- =C-c C-h= :: Hide all property drawers.\n")
-    (insert "- =C-c C-r= :: Reveal all property drawers.\n\n"))
+    (insert "- =C-c C-r= :: Reveal all property drawers.\n\n")
+    ;; 2. Insert the main IAM Role header next.
+    (aws-iam-role-viewer-insert-role-header role))
 
   ;; Asynchronously fetch all policies for the role.
   (let ((policies-promise (aws-iam-role-viewer--get-all-policies-async role))
