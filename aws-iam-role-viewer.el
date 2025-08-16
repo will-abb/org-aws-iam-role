@@ -21,6 +21,9 @@ If nil, uses default profile or environment credentials.")
 (defvar aws-iam-role-viewer-fullscreen t
   "If non-nil, show the IAM role buffer in fullscreen.")
 
+(defvar aws-iam-role-viewer-read-only-by-default t
+  "If non-nil, role viewer buffers will be read-only by default.")
+
 ;;;###autoload
 (defun aws-iam-role-viewer-view-details ()
   "Prompt for an IAM role and display its details in an Org-mode buffer."
@@ -40,6 +43,17 @@ If nil, uses default profile or environment credentials.")
     (setq aws-iam-role-viewer-profile
           (completing-read "Select AWS profile: " profiles nil t))
     (message "Set IAM Role AWS profile to: %s" aws-iam-role-viewer-profile)))
+
+(defun aws-iam-role-viewer-toggle-read-only ()
+  "Toggle read-only mode in the current buffer and provide feedback."
+  (interactive)
+  (if buffer-read-only
+      (progn
+        (read-only-mode -1)
+        (message "Buffer is now editable."))
+    (progn
+      (read-only-mode 1)
+      (message "Buffer is now read-only."))))
 
 ;;; Internal Helpers & Structs
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -303,6 +317,8 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
 This function is called when the user presses C-c C-c inside an
 aws-iam source block. It reads the block's content (the policy JSON)
 and header arguments to construct and run the appropriate AWS CLI command."
+  (when buffer-read-only
+    (user-error "Buffer is read-only. Press C-c C-e to enable edits and execution."))
   (let* ((role-name (cdr (assoc :role-name params)))
          (policy-name (cdr (assoc :policy-name params)))
          (policy-type-str (cdr (assoc :policy-type params)))
@@ -354,8 +370,11 @@ and header arguments to construct and run the appropriate AWS CLI command."
                             (aws-iam-role-viewer--cli-profile-arg))))
 
                  (t (user-error "Unsupported policy type for modification: %s" policy-type)))))
-      ;; Execute synchronously and return output for the #+RESULTS: block.
-      (shell-command-to-string cmd))))
+      ;; Execute command, get output, and return "Success!" if output is empty.
+      (let ((result (string-trim (shell-command-to-string cmd))))
+        (if (string-empty-p result)
+            "Success!"
+          result)))))
 
 ;;; Display Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -495,9 +514,12 @@ rendering of role information."
     ;; 1. Insert the Usage and Keybindings section first.
     (insert "* Usage\n")
     (insert "** Applying Changes\n")
+    (insert "By default, this buffer is in read-only mode to prevent accidents. ")
+    (insert "Press =C-c C-e= to toggle editable mode.\n")
     (insert "To modify a policy, edit the content of its source block and press =C-c C-c= inside the block. ")
     (insert "This will execute the corresponding AWS CLI command to apply your changes.\n")
     (insert "** Keybindings\n")
+    (insert "- =C-c C-e= :: Toggle read-only mode to allow/prevent edits.\n")
     (insert "- =C-c C-c= :: Inside a source block, apply changes to AWS.\n")
     (insert "- =C-c C-h= :: Hide all property drawers.\n")
     (insert "- =C-c C-r= :: Reveal all property drawers.\n\n")
@@ -530,9 +552,12 @@ rendering of role information."
 (defun aws-iam-role-viewer-finalize-and-display-role-buffer (buf)
   "Set keybinds, mode, and display the buffer BUF."
   (with-current-buffer buf
+    (local-set-key (kbd "C-c C-e") #'aws-iam-role-viewer-toggle-read-only)
     (local-set-key (kbd "C-c C-h") #'org-fold-hide-drawer-all)
     (local-set-key (kbd "C-c C-r") #'org-fold-show-all)
     (goto-char (point-min))
+    (when aws-iam-role-viewer-read-only-by-default
+      (read-only-mode 1))
     (if aws-iam-role-viewer-show-folded-by-default
         (org-overview)
       (org-fold-show-all)))
