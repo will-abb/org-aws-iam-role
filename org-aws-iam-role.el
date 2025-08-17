@@ -194,10 +194,10 @@ Returns a promise that resolves with the raw JSON string."
     (promise:async-start start-func)))
 
 (defun org-aws-iam-role-policy--construct-from-data (metadata policy-type document-json)
-  "Construct an `org-aws-iam-role-policy' struct from resolved data.
+  "Construct an `org-aws-iam-role-policy` struct from resolved data.
 
-METADATA is the parsed 'Policy' alist from `get-policy`.
-POLICY-TYPE is the type symbol (e.g., 'aws-managed).
+METADATA is the parsed `Policy` alist from `get-policy`.
+POLICY-TYPE is the type symbol (e.g., `aws-managed`).
 DOCUMENT-JSON is the raw JSON string from `get-policy-version`."
   (let* ((policy-version (alist-get 'PolicyVersion (json-parse-string document-json :object-type 'alist)))
          (document-string (alist-get 'Document policy-version))
@@ -222,39 +222,39 @@ DOCUMENT-JSON is the raw JSON string from `get-policy-version`."
      :tags (alist-get 'Tags metadata))))
 
 (defun org-aws-iam-role-policy-from-arn-async (policy-arn policy-type)
-  "Create an `org-aws-iam-role-policy' struct asynchronously from a policy ARN.
+  "Create an `org-aws-iam-role-policy` struct asynchronously from a policy ARN.
 
 Argument POLICY-ARN is the ARN of the IAM policy.
 Argument POLICY-TYPE is the type of the IAM policy.
-Returns a promise that resolves with the complete `org-aws-iam-role-policy` struct."
-  (promise-chain
-      ;; Step 1: Fetch the policy metadata.
-      (org-aws-iam-role-policy-get-metadata-async policy-arn)
+Returns a promise that resolves with the complete
+`org-aws-iam-role-policy` struct."
+  (let ((p (promise-chain
+               ;; Step 1: Fetch the policy metadata.
+               (org-aws-iam-role-policy-get-metadata-async policy-arn)
 
-    ;; Step 2: From metadata, fetch the policy document.
-    (then (lambda (metadata-json)
-            (let* ((metadata (alist-get 'Policy (json-parse-string metadata-json :object-type 'alist)))
-                   (version-id (alist-get 'DefaultVersionId metadata)))
-              (if version-id
-                  (promise-then (org-aws-iam-role-policy-get-version-document-async policy-arn version-id)
-                                (lambda (document-json)
-                                  ;; Pass both results to the next step
-                                  (list metadata document-json)))
-                ;; Gracefully fail by resolving to nil if no version-id is found.
-                (promise-resolve nil)))))
+             ;; Step 2: From metadata, fetch the policy document.
+             (then (lambda (metadata-json)
+                     (let* ((metadata (alist-get 'Policy (json-parse-string metadata-json :object-type 'alist)))
+                            (version-id (alist-get 'DefaultVersionId metadata)))
+                       (if version-id
+                           (promise-then (org-aws-iam-role-policy-get-version-document-async policy-arn version-id)
+                                         (lambda (document-json)
+                                           ;; Pass both results to the next step
+                                           (list metadata document-json)))
+                         ;; Gracefully fail by resolving to nil if no version-id is found.
+                         (promise-resolve nil)))))
 
-    ;; Step 3: Construct the final struct from the resolved data.
-    (then (lambda (results)
-            (when results
-              (let ((metadata (car results))
-                    (document-json (cadr results)))
-                (org-aws-iam-role-policy--construct-from-data metadata policy-type document-json)))))
-
+             ;; Step 3: Construct the final struct from the resolved data.
+             (then (lambda (results)
+                     (when results
+                       (let ((metadata (car results))
+                             (document-json (cadr results)))
+                         (org-aws-iam-role-policy--construct-from-data metadata policy-type document-json))))))))
     ;; Step 4: Catch any promise rejection in the chain and resolve to nil.
-    (catcha nil)))
+    (promise-catch p (lambda (&rest _) nil))))
 
 (defun org-aws-iam-role-inline-policy--construct-from-json (policy-name json)
-  "Construct an inline `org-aws-iam-role-policy' struct from its JSON.
+  "Construct an inline `org-aws-iam-role-policy` struct from its JSON.
 
 POLICY-NAME is the name of the inline policy. JSON is the raw
 string from the `get-role-policy` AWS CLI command."
@@ -480,7 +480,7 @@ Argument PARAMS is the list of header arguments passed to the block."
     (let ((start (point)))
       (insert trust-policy-json)
       ;; Don't let a JSON formatting error stop buffer creation.
-      (condition-case e
+      (condition-case nil
           (json-pretty-print start (point))
         (error nil)))
     (insert "\n#+END_SRC\n")))
@@ -517,7 +517,7 @@ Argument PARAMS is the list of header arguments passed to the block."
                     policy-arn))
     (let ((start (point)))
       (insert doc-json)
-      (condition-case e
+      (condition-case nil
           (json-pretty-print start (point))
         (error nil)))
     (insert "\n#+END_SRC\n")))
@@ -532,7 +532,7 @@ Argument PARAMS is the list of header arguments passed to the block."
   "Fetch all attached, inline, and boundary policies for ROLE.
 
 This function is asynchronous and returns a single promise that
-resolves with a vector of `org-aws-iam-role-policy' structs when
+resolves with a vector of `org-aws-iam-role-policy` structs when
 all underlying fetches are complete. Returns nil if no policies
 are found."
   (let* ((role-name (org-aws-iam-role-name role))
@@ -614,7 +614,7 @@ information."
          policies-promise
          (lambda (all-policies-vector)
            ;; Catch any error during rendering to prevent the callback from crashing Emacs.
-           (condition-case e
+           (condition-case nil
                (with-current-buffer buf
                  ;; Insert the fetched policy sections.
                  (org-aws-iam-role--insert-policies-section all-policies-vector boundary-arn role-name)
