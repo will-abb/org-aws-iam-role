@@ -381,6 +381,36 @@ Each bucket keeps the full alist for each policy item."
           (push p customer))))
     (cons (nreverse customer) (nreverse aws))))
 
+;;; Babel Execution
+
+(defun org-aws-iam-role--babel-cmd-for-trust-policy (role-name policy-document)
+  "Return the AWS CLI command for updating a trust policy for ROLE-NAME.
+POLICY-DOCUMENT is the JSON string of the policy."
+  (format "aws iam update-assume-role-policy --role-name %s --policy-document %s%s"
+          (shell-quote-argument role-name)
+          (shell-quote-argument policy-document)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--babel-cmd-for-inline-policy (role-name policy-name policy-document)
+  "Return the AWS CLI command for updating an inline policy.
+ROLE-NAME is the role, POLICY-NAME is the policy, and
+POLICY-DOCUMENT is the JSON string of the policy."
+  (format "aws iam put-role-policy --role-name %s --policy-name %s --policy-document %s%s"
+          (shell-quote-argument role-name)
+          (shell-quote-argument policy-name)
+          (shell-quote-argument policy-document)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--babel-cmd-for-managed-policy (policy-arn policy-document)
+  "Return the AWS CLI command for updating a managed policy.
+POLICY-ARN is the policy ARN, and POLICY-DOCUMENT is the JSON
+string of the new policy version."
+  (unless policy-arn
+    (user-error "Missing required header argument for managed policy: :arn"))
+  (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
+          (shell-quote-argument policy-arn)
+          (shell-quote-argument policy-document)
+          (org-aws-iam-role--cli-profile-arg)))
 
 (defun org-babel-execute:aws-iam (body params)
   "Execute an aws-iam source block to update an IAM policy in AWS.
@@ -397,52 +427,26 @@ Argument PARAMS is the list of header arguments passed to the block."
   (let* ((role-name (cdr (assoc :role-name params)))
          (policy-name (cdr (assoc :policy-name params)))
          (policy-type-str (cdr (assoc :policy-type params)))
-         (policy-type (intern policy-type-str))
-         (policy-document body))
+         (policy-type (intern policy-type-str)))
 
     (unless (and role-name policy-type)
       (user-error "Missing required header arguments: :role-name or :policy-type"))
 
     (message "Updating IAM Policy '%s' for role '%s'..." (or policy-name "TrustPolicy") role-name)
 
-    ;; Prepare the policy document for the command line.
-    ;; It needs to be a single-line JSON string.
-    (let* ((json-string (json-encode (json-read-from-string policy-document)))
+    (let* ((json-string (json-encode (json-read-from-string body)))
+           (policy-arn (cdr (assoc :arn params)))
            (cmd (cond
-                 ;; 1. Trust policies: use 'update-assume-role-policy'.
                  ((eq policy-type 'trust-policy)
-                  (format "aws iam update-assume-role-policy --role-name %s --policy-document %s%s"
-                          (shell-quote-argument role-name)
-                          (shell-quote-argument json-string)
-                          (org-aws-iam-role--cli-profile-arg)))
+                  (org-aws-iam-role--babel-cmd-for-trust-policy role-name json-string))
 
-                 ;; 2. Inline policies: use 'put-role-policy'.
                  ((eq policy-type 'inline)
-                  (format "aws iam put-role-policy --role-name %s --policy-name %s --policy-document %s%s"
-                          (shell-quote-argument role-name)
-                          (shell-quote-argument policy-name)
-                          (shell-quote-argument json-string)
-                          (org-aws-iam-role--cli-profile-arg)))
+                  (org-aws-iam-role--babel-cmd-for-inline-policy role-name policy-name json-string))
 
-                 ;; 3. Managed policies: create a new policy version.
-                 ((or (eq policy-type 'customer-managed) (eq policy-type 'aws-managed))
-                  (let ((policy-arn (cdr (assoc :arn params))))
-                    (unless policy-arn
-                      (user-error "Missing required header argument for managed policy: :arn"))
-                    (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
-                            (shell-quote-argument policy-arn)
-                            (shell-quote-argument json-string)
-                            (org-aws-iam-role--cli-profile-arg))))
-
-                 ;; 4. Permissions Boundary: is a managed policy.
-                 ((eq policy-type 'permissions-boundary)
-                  (let ((policy-arn (cdr (assoc :arn params))))
-                    (unless policy-arn
-                      (user-error "Missing required header argument for boundary policy: :arn"))
-                    (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
-                            (shell-quote-argument policy-arn)
-                            (shell-quote-argument json-string)
-                            (org-aws-iam-role--cli-profile-arg))))
+                 ((or (eq policy-type 'customer-managed)
+                      (eq policy-type 'aws-managed)
+                      (eq policy-type 'permissions-boundary))
+                  (org-aws-iam-role--babel-cmd-for-managed-policy policy-arn json-string))
 
                  (t (user-error "Unsupported policy type for modification: %s" policy-type)))))
       ;; Execute command, get output, and return "Success!" if output is empty.
@@ -528,6 +532,20 @@ Argument PARAMS is the list of header arguments passed to the block."
     (org-aws-iam-role-insert-trust-policy role))
   (org-aws-iam-role-finalize-and-display-role-buffer buf))
 
+(defun org-aws-iam-role--create-policy-promises (role-name boundary-arn attached-policies inline-policy-names)
+  "Create a list of promises to fetch all policies.
+ROLE-NAME is the role name. BOUNDARY-ARN is its boundary ARN.
+ATTACHED-POLICIES is a list of attached policies.
+INLINE-POLICY-NAMES is a list of inline policy names."
+  (let* ((split (org-aws-iam-role-split-managed-policies attached-policies))
+         (customer-managed (car split))
+         (aws-managed (cdr split))
+         (aws-promises (mapcar (lambda (p) (org-aws-iam-role-policy-from-arn-async (alist-get 'PolicyArn p) 'aws-managed)) aws-managed))
+         (customer-promises (mapcar (lambda (p) (org-aws-iam-role-policy-from-arn-async (alist-get 'PolicyArn p) 'customer-managed)) customer-managed))
+         (boundary-promise (when boundary-arn (list (org-aws-iam-role-policy-from-arn-async boundary-arn 'permissions-boundary))))
+         (inline-promises (mapcar (lambda (name) (org-aws-iam-role-inline-policy-from-name-async role-name name)) inline-policy-names)))
+    (append aws-promises customer-promises boundary-promise inline-promises)))
+
 (defun org-aws-iam-role--get-all-policies-async (role)
   "Fetch all attached, inline, and boundary policies for ROLE.
 
@@ -536,21 +554,11 @@ resolves with a vector of `org-aws-iam-role-policy` structs when
 all underlying fetches are complete. Returns nil if no policies
 are found."
   (let* ((role-name (org-aws-iam-role-name role))
-         ;; 1. Get lists of all policy identifiers first
          (attached (org-aws-iam-role-attached-policies role-name))
-         (split (org-aws-iam-role-split-managed-policies attached))
-         (customer-managed (car split))
-         (aws-managed (cdr split))
          (inline-policy-names (org-aws-iam-role-inline-policies role-name))
          (boundary-arn (org-aws-iam-role-permissions-boundary-arn role))
-
-         ;; 2. Create a unified list of promises for ALL policy types
-         (aws-promises (mapcar (lambda (p) (org-aws-iam-role-policy-from-arn-async (alist-get 'PolicyArn p) 'aws-managed)) aws-managed))
-         (customer-promises (mapcar (lambda (p) (org-aws-iam-role-policy-from-arn-async (alist-get 'PolicyArn p) 'customer-managed)) customer-managed))
-         (boundary-promise (when boundary-arn (list (org-aws-iam-role-policy-from-arn-async boundary-arn 'permissions-boundary))))
-         (inline-promises (mapcar (lambda (name) (org-aws-iam-role-inline-policy-from-name-async role-name name)) inline-policy-names))
-         (all-promises (append aws-promises customer-promises boundary-promise inline-promises)))
-    ;; Only create a master promise if there are any child promises to run.
+         (all-promises (org-aws-iam-role--create-policy-promises
+                        role-name boundary-arn attached inline-policy-names)))
     (when all-promises
       (promise-all all-promises))))
 
@@ -580,47 +588,53 @@ ROLE-NAME is the name of the parent IAM role."
           (org-aws-iam-role--insert-policy-struct-details boundary-policy role-name)
         (insert "Failed to fetch permissions boundary policy.\n")))))
 
+(defun org-aws-iam-role--insert-buffer-usage-notes ()
+  "Insert the usage and keybinding notes into the current buffer."
+  (insert "* Usage\n")
+  (insert "** Applying Changes\n")
+  (insert "By default, this buffer is in read-only mode to prevent accidents. ")
+  (insert "Press =C-c C-e= to toggle editable mode.\n")
+  (insert "To modify a policy, edit the content of its source block and press =C-c C-c= inside the block. ")
+  (insert "This will execute the corresponding AWS CLI command to apply your changes.\n")
+  (insert "** Keybindings\n")
+  (insert "- =C-c C-e= :: Toggle read-only mode to allow/prevent edits.\n")
+  (insert "- =C-c C-c= :: Inside a source block, apply changes to AWS.\n")
+  (insert "- =C-c (= :: Hide all property drawers.\n")
+  (insert "- =C-c )= :: Reveal all property drawers.\n\n"))
+
+(defun org-aws-iam-role--populate-buffer-async-callback (all-policies-vector role buf)
+  "Callback to populate BUF with fetched policies for ROLE.
+ALL-POLICIES-VECTOR is the resolved vector of policy structs."
+  ;; Catch any error during rendering to prevent the callback from crashing.
+  (condition-case nil
+      (with-current-buffer buf
+        (let ((boundary-arn (org-aws-iam-role-permissions-boundary-arn role))
+              (role-name (org-aws-iam-role-name role)))
+          ;; Insert the fetched policy sections.
+          (org-aws-iam-role--insert-policies-section all-policies-vector boundary-arn role-name)
+          ;; Insert remaining synchronous sections and finalize the buffer.
+          (org-aws-iam-role--insert-remaining-sections-and-finalize role buf)))
+    (error nil)))
+
 (defun org-aws-iam-role-populate-role-buffer (role buf)
   "Insert all details for ROLE and its policies into the buffer BUF.
-
 This function orchestrates the asynchronous fetching and rendering of role
 information."
   (with-current-buffer buf
     (erase-buffer)
     (org-mode)
     (setq-local org-src-fontify-natively t)
-    ;; 1. Insert the Usage and Keybindings section first.
-    (insert "* Usage\n")
-    (insert "** Applying Changes\n")
-    (insert "By default, this buffer is in read-only mode to prevent accidents. ")
-    (insert "Press =C-c C-e= to toggle editable mode.\n")
-    (insert "To modify a policy, edit the content of its source block and press =C-c C-c= inside the block. ")
-    (insert "This will execute the corresponding AWS CLI command to apply your changes.\n")
-    (insert "** Keybindings\n")
-    (insert "- =C-c C-e= :: Toggle read-only mode to allow/prevent edits.\n")
-    (insert "- =C-c C-c= :: Inside a source block, apply changes to AWS.\n")
-    (insert "- =C-c (= :: Hide all property drawers.\n")
-    (insert "- =C-c )= :: Reveal all property drawers.\n\n")
-    ;; 2. Insert the main IAM Role header next.
+    (org-aws-iam-role--insert-buffer-usage-notes)
     (org-aws-iam-role-insert-role-header role))
 
   ;; Asynchronously fetch all policies for the role.
-  (let ((policies-promise (org-aws-iam-role--get-all-policies-async role))
-        (boundary-arn (org-aws-iam-role-permissions-boundary-arn role))
-        (role-name (org-aws-iam-role-name role)))
+  (let ((policies-promise (org-aws-iam-role--get-all-policies-async role)))
     ;; If there are policies, wait for them and then render. Otherwise, render the empty state.
     (if policies-promise
         (promise-then
          policies-promise
          (lambda (all-policies-vector)
-           ;; Catch any error during rendering to prevent the callback from crashing Emacs.
-           (condition-case nil
-               (with-current-buffer buf
-                 ;; Insert the fetched policy sections.
-                 (org-aws-iam-role--insert-policies-section all-policies-vector boundary-arn role-name)
-                 ;; Insert remaining synchronous sections and finalize the buffer.
-                 (org-aws-iam-role--insert-remaining-sections-and-finalize role buf))
-             (error nil))))
+           (org-aws-iam-role--populate-buffer-async-callback all-policies-vector role buf)))
       ;; Case where there are no policies of any kind.
       (with-current-buffer buf
         (insert "** Permission Policies\n")
