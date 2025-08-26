@@ -1,9 +1,9 @@
 ;;; org-aws-iam-role.el --- Browse and modify AWS IAM Roles in Org Babel -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 Williams Bosch-Bello
+;; Copyright (C) 2025 William Bosch-Bello
 
-;; Author: Williams Bosch-Bello <williamsbosch@gmail.com>
-;; Maintainer: Williams Bosch-Bello <williamsbosch@gmail.com>
+;; Author: William Bosch-Bello <williamsbosch@gmail.com>
+;; Maintainer: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Created: August 16, 2025
 ;; Version: 1.1.0
 ;; Package-Version: 1.1.0
