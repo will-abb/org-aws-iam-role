@@ -1,0 +1,708 @@
+* Usage
+** Applying Changes via Babel
+All actions are performed by executing an =aws-iam= source block with =C-c C-c=.
+You will be asked to confirm before any change is applied.
+
+- *To Create or Update an Inline Policy*, simply write or edit its source block and execute it. No special flag is needed.
+- *To Update any other policy*, edit its source block and execute.
+
+Use header arguments for other actions:
+- =:create t=     :: Creates a new *customer-managed* policy.
+- =:delete t=     :: Deletes a policy. For managed policies, this will fail if the policy is still attached to any role, user, or group.
+- =:detach t=     :: Detaches a *managed* policy from the current role.
+
+** Keybindings
+- =C-c C-e= :: Toggle read-only mode to allow/prevent edits.
+- =C-c C-c= :: Inside a source block, apply changes to AWS.
+- =C-c (= :: Hide all property drawers.
+- =C-c )= :: Reveal all property drawers.
+
+* IAM Role: test-iam-packageIamRole
+:PROPERTIES:
+:ARN: arn:aws:iam::005343251202:role/test-iam-packageIamRole
+:RoleID: AROAQCPT3RMBCBVAKQAPT
+:Path: /
+:Created: 2025-07-26T04:27:20+00:00
+:MaxSessionDuration: 3600
+:Description: nil
+:PermissionsBoundaryArn: arn:aws:iam::005343251202:policy/DevOpsPermBoundary
+:LastUsedDate: nil
+:LastUsedRegion: nil
+:Tags: {"environment":"personal","managed":"terraform","repo":"aws-iam-mode/terraform/main.tf","user_id_of_creator":"williseedAdminIDC","assumed_role_of_creator":"AWSReservedSSO_personal-full-admin_a401bb7d90ea7c07"}
+:END:
+** Permission Policies
+*** AmazonSSMManagedInstanceCore
+:PROPERTIES:
+:AWSPolicyType: AWS Managed
+:ID: ANPAIXSHM2BNB2D3AXXRU
+:ARN: arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+:Path: /
+:Description: The policy for Amazon EC2 Role to enable AWS Systems Manager service core functionality.
+:Created: 2019-03-15T17:22:12+00:00
+:Updated: 2019-05-23T16:54:21+00:00
+:AttachmentCount: 2
+:DefaultVersion: v2
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "AmazonSSMManagedInstanceCore" :policy-type "aws-managed" :arn "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeAssociation",
+        "ssm:GetDeployablePatchSnapshotForInstance",
+        "ssm:GetDocument",
+        "ssm:DescribeDocument",
+        "ssm:GetManifest",
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:ListAssociations",
+        "ssm:ListInstanceAssociations",
+        "ssm:PutInventory",
+        "ssm:PutComplianceItems",
+        "ssm:PutConfigurePackageResult",
+        "ssm:UpdateAssociationStatus",
+        "ssm:UpdateInstanceAssociationStatus",
+        "ssm:UpdateInstanceInformation"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssmmessages:CreateControlChannel",
+        "ssmmessages:CreateDataChannel",
+        "ssmmessages:OpenControlChannel",
+        "ssmmessages:OpenDataChannel"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2messages:AcknowledgeMessage",
+        "ec2messages:DeleteMessage",
+        "ec2messages:FailMessage",
+        "ec2messages:GetEndpoint",
+        "ec2messages:GetMessages",
+        "ec2messages:SendReply"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** CloudWatchReadOnlyAccess
+:PROPERTIES:
+:AWSPolicyType: AWS Managed
+:ID: ANPAJN23PDQP7SZQAE3QE
+:ARN: arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess
+:Path: /
+:Description: Provides read only access to CloudWatch.
+:Created: 2015-02-06T18:40:01+00:00
+:Updated: 2024-11-21T17:51:05+00:00
+:AttachmentCount: 1
+:DefaultVersion: v10
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "CloudWatchReadOnlyAccess" :policy-type "aws-managed" :arn "arn:aws:iam::aws:policy/CloudWatchReadOnlyAccess" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudWatchReadOnlyAccessPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "application-autoscaling:DescribeScalingPolicies",
+        "application-signals:BatchGet*",
+        "application-signals:Get*",
+        "application-signals:List*",
+        "autoscaling:Describe*",
+        "cloudwatch:BatchGet*",
+        "cloudwatch:Describe*",
+        "cloudwatch:GenerateQuery",
+        "cloudwatch:Get*",
+        "cloudwatch:List*",
+        "logs:Get*",
+        "logs:List*",
+        "logs:StartQuery",
+        "logs:StopQuery",
+        "logs:Describe*",
+        "logs:TestMetricFilter",
+        "logs:FilterLogEvents",
+        "logs:StartLiveTail",
+        "logs:StopLiveTail",
+        "oam:ListSinks",
+        "sns:Get*",
+        "sns:List*",
+        "rum:BatchGet*",
+        "rum:Get*",
+        "rum:List*",
+        "synthetics:Describe*",
+        "synthetics:Get*",
+        "synthetics:List*",
+        "xray:BatchGet*",
+        "xray:Get*",
+        "xray:List*",
+        "xray:StartTraceRetrieval",
+        "xray:CancelTraceRetrieval"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OAMReadPermissions",
+      "Effect": "Allow",
+      "Action": [
+        "oam:ListAttachedLinks"
+      ],
+      "Resource": "arn:aws:oam:*:*:sink/*"
+    },
+    {
+      "Sid": "CloudWatchReadOnlyGetRolePermissions",
+      "Effect": "Allow",
+      "Action": "iam:GetRole",
+      "Resource": "arn:aws:iam::*:role/aws-service-role/application-signals.cloudwatch.amazonaws.com/AWSServiceRoleForCloudWatchApplicationSignals"
+    }
+  ]
+}
+#+END_SRC
+*** AmazonS3ReadOnlyAccess
+:PROPERTIES:
+:AWSPolicyType: AWS Managed
+:ID: ANPAIZTJ4DXE7G6AGAE6M
+:ARN: arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+:Path: /
+:Description: Provides read only access to all buckets via the AWS Management Console.
+:Created: 2015-02-06T18:40:59+00:00
+:Updated: 2023-08-10T21:31:39+00:00
+:AttachmentCount: 1
+:DefaultVersion: v3
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "AmazonS3ReadOnlyAccess" :policy-type "aws-managed" :arn "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:Get*",
+        "s3:List*",
+        "s3:Describe*",
+        "s3-object-lambda:Get*",
+        "s3-object-lambda:List*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** AWSQuickSetupPatchPolicyBaselineAccess
+:PROPERTIES:
+:AWSPolicyType: AWS Managed
+:ID: ANPAZKAPJZG4CCQL42YSU
+:ARN: arn:aws:iam::aws:policy/AWSQuickSetupPatchPolicyBaselineAccess
+:Path: /
+:Description: Provides read-only permissions to access patch baselines that have been configured by an administrator in the current AWS account or organization using Quick Setup.
+:Created: 2024-06-26T09:38:00+00:00
+:Updated: 2024-06-26T09:38:00+00:00
+:AttachmentCount: 1
+:DefaultVersion: v1
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "AWSQuickSetupPatchPolicyBaselineAccess" :policy-type "aws-managed" :arn "arn:aws:iam::aws:policy/AWSQuickSetupPatchPolicyBaselineAccess" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "QuickSetupPatchingBaselineOverridesS3SameAccountReadOnlyAccess",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::aws-quicksetup-patchpolicy-*",
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalAccount": [
+            "${aws:ResourceAccount}"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "QuickSetupPatchingBaselineOverridesS3OrganizationReadOnlyAccess",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::aws-quicksetup-patchpolicy-*",
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalOrgID": [
+            "${aws:ResourceOrgID}"
+          ]
+        }
+      }
+    }
+  ]
+}
+#+END_SRC
+*** test-iam-package-extra-policy-1
+:PROPERTIES:
+:AWSPolicyType: Customer Managed
+:ID: ANPAQCPT3RMBN7CCAQS36
+:ARN: arn:aws:iam::005343251202:policy/test-iam-package-extra-policy-1
+:Path: /
+:Description: Extra policy 1
+:Created: 2025-07-26T04:27:20+00:00
+:Updated: 2025-07-26T04:27:20+00:00
+:AttachmentCount: 1
+:DefaultVersion: v1
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-extra-policy-1" :policy-type "customer-managed" :arn "arn:aws:iam::005343251202:policy/test-iam-package-extra-policy-1" :results output
+{
+  "Statement": [
+    {
+      "Action": "logs:DescribeLogGroups",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ],
+  "Version": "2012-10-17"
+}
+#+END_SRC
+*** test-iam-package-extra-policy-2
+:PROPERTIES:
+:AWSPolicyType: Customer Managed
+:ID: ANPAQCPT3RMBEUW4JQ66O
+:ARN: arn:aws:iam::005343251202:policy/test-iam-package-extra-policy-2
+:Path: /
+:Description: Extra policy 2
+:Created: 2025-07-26T04:27:20+00:00
+:Updated: 2025-07-26T04:27:20+00:00
+:AttachmentCount: 1
+:DefaultVersion: v1
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-extra-policy-2" :policy-type "customer-managed" :arn "arn:aws:iam::005343251202:policy/test-iam-package-extra-policy-2" :results output
+{
+  "Statement": [
+    {
+      "Action": "ec2:DescribeInstances",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ],
+  "Version": "2012-10-17"
+}
+#+END_SRC
+*** test-iam-package-inline1
+:PROPERTIES:
+:AWSPolicyType: Inline
+:ID: nil
+:ARN: 
+:Path: nil
+:Description: nil
+:Created: nil
+:Updated: nil
+:AttachmentCount: nil
+:DefaultVersion: nil
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-inline1" :policy-type "inline" :arn "" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "s3:ListBucket",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** test-iam-package-inline10
+:PROPERTIES:
+:AWSPolicyType: Inline
+:ID: nil
+:ARN: 
+:Path: nil
+:Description: nil
+:Created: nil
+:Updated: nil
+:AttachmentCount: nil
+:DefaultVersion: nil
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-inline10" :policy-type "inline" :arn "" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "kms:ListKeys",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** test-iam-package-inline2
+:PROPERTIES:
+:AWSPolicyType: Inline
+:ID: nil
+:ARN: 
+:Path: nil
+:Description: nil
+:Created: nil
+:Updated: nil
+:AttachmentCount: nil
+:DefaultVersion: nil
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-inline2" :policy-type "inline" :arn "" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "ec2:DescribeInstances",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** test-iam-package-inline3
+:PROPERTIES:
+:AWSPolicyType: Inline
+:ID: nil
+:ARN: 
+:Path: nil
+:Description: nil
+:Created: nil
+:Updated: nil
+:AttachmentCount: nil
+:DefaultVersion: nil
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-inline3" :policy-type "inline" :arn "" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "logs:DescribeLogGroups",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** test-iam-package-inline4
+:PROPERTIES:
+:AWSPolicyType: Inline
+:ID: nil
+:ARN: 
+:Path: nil
+:Description: nil
+:Created: nil
+:Updated: nil
+:AttachmentCount: nil
+:DefaultVersion: nil
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-inline4" :policy-type "inline" :arn "" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "cloudwatch:ListMetrics",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** test-iam-package-inline6
+:PROPERTIES:
+:AWSPolicyType: Inline
+:ID: nil
+:ARN: 
+:Path: nil
+:Description: nil
+:Created: nil
+:Updated: nil
+:AttachmentCount: nil
+:DefaultVersion: nil
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-inline6" :policy-type "inline" :arn "" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "dynamodb:ListTables",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** test-iam-package-inline7
+:PROPERTIES:
+:AWSPolicyType: Inline
+:ID: nil
+:ARN: 
+:Path: nil
+:Description: nil
+:Created: nil
+:Updated: nil
+:AttachmentCount: nil
+:DefaultVersion: nil
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-inline7" :policy-type "inline" :arn "" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sns:ListTopics",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+*** test-iam-package-inline8
+:PROPERTIES:
+:AWSPolicyType: Inline
+:ID: nil
+:ARN: 
+:Path: nil
+:Description: nil
+:Created: nil
+:Updated: nil
+:AttachmentCount: nil
+:DefaultVersion: nil
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "test-iam-package-inline8" :policy-type "inline" :arn "" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sqs:ListQueues",
+      "Effect": "Allow",
+      "Resource": "*"
+    }
+  ]
+}
+#+END_SRC
+** Permissions Boundary Policy
+*** DevOpsPermBoundary
+:PROPERTIES:
+:AWSPolicyType: Permissions Boundary
+:ID: ANPAQCPT3RMBC7C3ODRQG
+:ARN: arn:aws:iam::005343251202:policy/DevOpsPermBoundary
+:Path: /
+:Description: Description, just a dummy perm boundary
+:Created: 2025-07-16T23:58:20+00:00
+:Updated: 2025-08-16T18:42:28+00:00
+:AttachmentCount: 0
+:DefaultVersion: v3
+:END:
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "DevOpsPermBoundary" :policy-type "permissions-boundary" :arn "arn:aws:iam::005343251202:policy/DevOpsPermBoundary" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "VisualEditor0",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:GetGroupsForCapacityReservation",
+        "ec2:DescribeCapacityBlockExtensionOfferings"
+      ],
+      "Resource": [
+        "arn:aws:ec2:*:005343251202:fpga-image/*",
+        "arn:aws:ec2:*:005343251202:capacity-reservation/*"
+      ]
+    },
+    {
+      "Sid": "VisualEditor1",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeFastLaunchImages",
+        "ec2:DescribeInstances",
+        "ec2:DescribeCoipPools",
+        "ec2:DescribeVerifiedAccessEndpoints",
+        "ec2:DescribeSnapshots",
+        "ec2:DescribeLocalGatewayVirtualInterfaces",
+        "ec2:DescribeNetworkInsightsPaths",
+        "ec2:DescribeHostReservationOfferings",
+        "ec2:DescribeTrafficMirrorSessions",
+        "ec2:DescribeExportImageTasks",
+        "ec2:DescribeTrafficMirrorFilters",
+        "ec2:DescribeVolumeStatus",
+        "ec2:DescribeLocalGatewayRouteTableVpcAssociations",
+        "ec2:DescribeScheduledInstanceAvailability",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeExportTasks",
+        "ec2:DescribeTransitGatewayMulticastDomains",
+        "ec2:DescribeManagedPrefixLists",
+        "ec2:DescribeKeyPairs",
+        "ec2:DescribeReservedInstancesListings",
+        "ec2:DescribeCapacityReservations",
+        "ec2:DescribeVpcClassicLinkDnsSupport",
+        "ec2:DescribeIpamResourceDiscoveryAssociations",
+        "ec2:DescribeIdFormat",
+        "ec2:DescribeFastSnapshotRestores",
+        "ec2:DescribeInstanceEventWindows",
+        "ec2:DescribeImportSnapshotTasks",
+        "ec2:DescribeLocalGatewayVirtualInterfaceGroups",
+        "ec2:DescribeTransitGatewayAttachments",
+        "ec2:DescribeAddressTransfers",
+        "ec2:DescribeScheduledInstances",
+        "ec2:DescribeTrunkInterfaceAssociations",
+        "ec2:DescribeInstanceConnectEndpoints",
+        "ec2:DescribeIpv6Pools",
+        "ec2:DescribeFleets",
+        "ec2:DescribeReservedInstancesModifications",
+        "ec2:DescribeAwsNetworkPerformanceMetricSubscriptions",
+        "ec2:DescribeCapacityReservationBillingRequests",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeMovingAddresses",
+        "ec2:DescribeMacHosts",
+        "ec2:DescribeCapacityReservationFleets",
+        "ec2:DescribePrincipalIdFormat",
+        "ec2:DescribeVerifiedAccessGroups",
+        "ec2:DescribeFlowLogs",
+        "ec2:DescribeRegions",
+        "ec2:DescribeTransitGateways",
+        "ec2:DescribeVpcEndpointServices",
+        "ec2:DescribeSpotInstanceRequests",
+        "ec2:DescribeAddressesAttribute",
+        "ec2:DescribeMacModificationTasks",
+        "ec2:DescribeVerifiedAccessTrustProviders",
+        "ec2:DescribeVerifiedAccessInstanceLoggingConfigurations",
+        "ec2:DescribeInstanceTypeOfferings",
+        "ec2:DescribeTrafficMirrorTargets",
+        "ec2:DescribeTransitGatewayRouteTables",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeNetworkInterfaceAttribute",
+        "ec2:DescribeLocalGatewayRouteTables",
+        "ec2:DescribeVpcEndpointConnections",
+        "ec2:DescribeInstanceStatus",
+        "ec2:DescribeVpcEndpointAssociations",
+        "ec2:DescribeHostReservations",
+        "ec2:GetInstanceMetadataDefaults",
+        "ec2:DescribeRouteServerEndpoints",
+        "ec2:DescribeBundleTasks",
+        "ec2:DescribeIdentityIdFormat",
+        "ec2:DescribeClassicLinkInstances",
+        "ec2:DescribeTransitGatewayConnects",
+        "ec2:DescribeIpamPools",
+        "ec2:DescribeVpcEndpointConnectionNotifications",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeStoreImageTasks",
+        "ec2:DescribeFpgaImages",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeIpams",
+        "ec2:DescribeRouteServerPeers",
+        "ec2:DescribeRouteServers",
+        "ec2:DescribeVpcBlockPublicAccessExclusions",
+        "ec2:DescribeStaleSecurityGroups",
+        "ec2:DescribeAggregateIdFormat",
+        "ec2:DescribeVolumesModifications",
+        "ec2:DescribeTransitGatewayRouteTableAnnouncements",
+        "ec2:DescribeTransitGatewayConnectPeers",
+        "ec2:DescribeByoipCidrs",
+        "ec2:DescribeNetworkInsightsAnalyses",
+        "ec2:DescribePlacementGroups",
+        "ec2:DescribeInternetGateways",
+        "ec2:DescribeCapacityBlockOfferings",
+        "ec2:DescribeInstanceImageMetadata",
+        "ec2:DescribeIpamByoasn",
+        "ec2:DescribeTrafficMirrorFilterRules",
+        "ec2:DescribeOutpostLags",
+        "ec2:DescribeSpotDatafeedSubscription",
+        "ec2:DescribeAccountAttributes",
+        "ec2:DescribeNetworkInterfacePermissions",
+        "ec2:DescribeReservedInstances",
+        "ec2:DescribeNetworkAcls",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeClientVpnEndpoints",
+        "ec2:DescribeEgressOnlyInternetGateways",
+        "ec2:DescribeLaunchTemplates",
+        "ec2:DescribeVpnConnections",
+        "ec2:DescribeVpcPeeringConnections",
+        "ec2:DescribeReservedInstancesOfferings",
+        "ec2:GetTransitGatewayAttachmentPropagations",
+        "ec2:DescribeSnapshotTierStatus",
+        "ec2:DescribeVpcEndpointServiceConfigurations",
+        "ec2:DescribeVerifiedAccessInstances",
+        "ec2:DescribePrefixLists",
+        "ec2:DescribeInstanceCreditSpecifications",
+        "ec2:DescribeVpcClassicLink",
+        "ec2:DescribeInstanceTopology",
+        "ec2:DescribeLocalGatewayRouteTableVirtualInterfaceGroupAssociations",
+        "ec2:GetInstanceTypesFromInstanceRequirements",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeIpamResourceDiscoveries",
+        "ec2:GetTransitGatewayRouteTablePropagations",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeVpcEndpoints",
+        "ec2:DescribeElasticGpus",
+        "ec2:DescribeVpnGateways",
+        "ec2:DescribeServiceLinkVirtualInterfaces",
+        "ec2:ListSnapshotsInRecycleBin",
+        "ec2:DescribeTransitGatewayPolicyTables",
+        "ec2:DescribeTransitGatewayPeeringAttachments",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeIpamScopes",
+        "ec2:DescribeIpamExternalResourceVerificationTokens",
+        "ec2:DescribeCapacityBlockExtensionHistory",
+        "ec2:DescribeDhcpOptions",
+        "ec2:DescribeSpotPriceHistory",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSecurityGroupVpcAssociations",
+        "ec2:DescribeNetworkInsightsAccessScopeAnalyses",
+        "ec2:DescribeVerifiedAccessInstanceWebAclAssociations",
+        "ec2:ListImagesInRecycleBin",
+        "ec2:DescribeCarrierGateways",
+        "ec2:DescribeVpcBlockPublicAccessOptions",
+        "ec2:GetTransitGatewayRouteTableAssociations",
+        "ec2:DescribeDeclarativePoliciesReports",
+        "ec2:DescribeLocalGatewayRouteTablePermissions",
+        "ec2:DescribeIamInstanceProfileAssociations",
+        "ec2:DescribeNetworkInsightsAccessScopes",
+        "ec2:DescribeTags",
+        "ec2:DescribeReplaceRootVolumeTasks",
+        "ec2:DescribeLaunchTemplateVersions",
+        "ec2:GetVpnConnectionDeviceTypes",
+        "ec2:DescribeImportImageTasks",
+        "ec2:GetTransitGatewayPrefixListReferences",
+        "ec2:DescribeNatGateways",
+        "ec2:DescribeCustomerGateways",
+        "ec2:DescribeInstanceEventNotificationAttributes",
+        "ec2:DescribeLocalGateways",
+        "ec2:DescribeSpotFleetRequests",
+        "ec2:DescribeHosts",
+        "ec2:DescribeImages",
+        "ec2:DescribePublicIpv4Pools",
+        "ec2:DescribeTransitGatewayVpcAttachments",
+        "ec2:DescribeConversionTasks",
+        "ec2:DescribeLockedSnapshots"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Statement1",
+      "Effect": "Allow",
+      "Action": [
+        "s3:*"
+      ],
+      "Resource": [
+        "*"
+      ]
+    }
+  ]
+}
+#+END_SRC
+** Trust Policy
+#+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-type "trust-policy" :results output
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "sts.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+#+END_SRC
