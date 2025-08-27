@@ -507,7 +507,7 @@ This function is controlled by header arguments.
               (cond
                ((eq policy-type 'trust-policy)
                 (org-aws-iam-role--babel-cmd-for-trust-policy role-name json-string))
-               ((eq policy-type 'inline) ; This now handles both create and update
+               ((eq policy-type 'inline) ; This handles both create and update for inlines, it's the same
                 (org-aws-iam-role--babel-cmd-for-inline-policy role-name policy-name json-string))
                ((or (eq policy-type 'customer-managed)
                     (eq policy-type 'aws-managed)
