@@ -39,12 +39,28 @@
            (role-struct (org-aws-iam-role-construct role-obj)))
       (with-temp-buffer
         (org-aws-iam-role-populate-role-buffer role-struct (current-buffer))
+        ;; CRITICAL: We must wait for the asynchronous policy fetching to complete.
+        (sleep-for 10)
         (goto-char (point-min))
         (let ((buf-str (buffer-string)))
           (message "DEBUG buffer-start=%s"
                    (substring buf-str 0 (min 200 (length buf-str))))
-          ;; Basic sanity checks
           (should (string-match-p "\\* IAM Role:" buf-str))
-          (should (string-match-p ":ARN:" buf-str)))))))
+          (should (string-match-p "\\*\\* Permission Policies" buf-str)))))))
+
+;; Fourth test: Print the generated buffer content to create a golden file.
+(ert-deftest org-aws-iam-role/print-generated-buffer-for-golden-file ()
+  "Populate a buffer with role details and print its full content for inspection."
+  (let ((test-role-name "test-iam-packageIamRole")
+        (org-aws-iam-role-profile "williseed-iam-tester"))
+    (let* ((role-obj (org-aws-iam-role-get-full test-role-name))
+           (role-struct (org-aws-iam-role-construct role-obj)))
+      (with-temp-buffer
+        (org-aws-iam-role-populate-role-buffer role-struct (current-buffer))
+        ;; CRITICAL: Wait for async operations to complete before reading the buffer.
+        (sleep-for 10)
+        (message "--- START GENERATED BUFFER CONTENT ---\n%s\n--- END GENERATED BUFFER CONTENT ---"
+                 (buffer-string))))))
+
 
 (provide 'integration-e2e-test)
