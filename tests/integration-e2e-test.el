@@ -49,18 +49,43 @@
           (should (string-match-p "\\*\\* Permission Policies" buf-str)))))))
 
 ;; Fourth test: Print the generated buffer content to create a golden file.
+;; Fourth test: Print the generated buffer content to create a golden file.
 (ert-deftest org-aws-iam-role/print-generated-buffer-for-golden-file ()
-  "Populate a buffer with role details and print its full content for inspection."
+  "Call the main view function and capture the content from the buffer it creates."
   (let ((test-role-name "test-iam-packageIamRole")
-        (org-aws-iam-role-profile "williseed-iam-tester"))
-    (let* ((role-obj (org-aws-iam-role-get-full test-role-name))
-           (role-struct (org-aws-iam-role-construct role-obj)))
-      (with-temp-buffer
-        (org-aws-iam-role-populate-role-buffer role-struct (current-buffer))
-        ;; CRITICAL: Wait for async operations to complete before reading the buffer.
-        (sleep-for 10)
-        (message "--- START GENERATED BUFFER CONTENT ---\n%s\n--- END GENERATED BUFFER CONTENT ---"
-                 (buffer-string))))))
+        (org-aws-iam-role-profile "williseed-iam-tester")
+        (output-buffer-name "*test-output-buffer*")
+        (generated-content ""))
 
+    ;; Step 1: Call the main entry point. This creates the real buffer
+    ;; (e.g., "*IAM Role: test-iam-packageIamRole <timestamp>*") and
+    ;; starts the async process correctly.
+    (org-aws-iam-role-view-details test-role-name)
+
+    ;; Step 2: Wait for the async operations to complete.
+    (sleep-for 10)
+
+    ;; Step 3: Find the buffer that the package just created for us.
+    (let ((role-buffer
+           (cl-find-if (lambda (buf)
+                         (string-match-p
+                          (concat "\\*IAM Role: " (regexp-quote test-role-name))
+                          (buffer-name buf)))
+                       (buffer-list))))
+
+      ;; If we found the buffer, grab its content.
+      (when role-buffer
+        (with-current-buffer role-buffer
+          (setq generated-content (buffer-string))
+          ;; Clean up by killing the buffer after we're done.
+          (kill-buffer (current-buffer)))))
+
+    ;; Step 4: Write the captured content to our test output buffer for inspection.
+    (with-current-buffer (get-buffer-create output-buffer-name)
+      (erase-buffer)
+      (insert generated-content))
+
+    (message "Test output has been sent to the buffer: %s" output-buffer-name)
+    (should (get-buffer output-buffer-name))))
 
 (provide 'integration-e2e-test)
