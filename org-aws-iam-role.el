@@ -77,11 +77,15 @@ If nil, uses default profile or environment credentials.")
   "If non-nil, role viewer buffers will be read-only by default.")
 
 ;;;###autoload
-(defun org-aws-iam-role-view-details ()
-  "Prompt for an IAM role and display its details in an Org-mode buffer."
+(cl-defun org-aws-iam-role-view-details (&optional role-name)
+  "Display details for an IAM ROLE-NAME in an Org-mode buffer.
+If ROLE-NAME is nil and called interactively, prompt the user.
+If ROLE-NAME is provided programmatically, skip prompting."
   (interactive)
   (org-aws-iam-role-check-auth)
-  (let* ((name (completing-read "IAM Role: " (org-aws-iam-role-list-names)))
+  (let* ((name (or role-name
+                   (when (called-interactively-p 'any)
+                     (completing-read "IAM Role: " (org-aws-iam-role-list-names)))))
          (role (org-aws-iam-role-construct
                 (org-aws-iam-role-get-full name))))
     (org-aws-iam-role-show-buffer role)))
