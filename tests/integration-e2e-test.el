@@ -48,44 +48,47 @@
           (should (string-match-p "\\* IAM Role:" buf-str))
           (should (string-match-p "\\*\\* Permission Policies" buf-str)))))))
 
-;; Fourth test: Print the generated buffer content to create a golden file.
-;; Fourth test: Print the generated buffer content to create a golden file.
-(ert-deftest org-aws-iam-role/print-generated-buffer-for-golden-file ()
-  "Call the main view function and capture the content from the buffer it creates."
+;; Helper function to normalize strings for a stable comparison.
+(defun org-aws-iam-role-test--normalize-string (str)
+  "Normalize STR by removing the unique timestamp and standardizing newlines."
+  (when str
+    (let ((s (replace-regexp-in-string " <[0-9-]+>" "" str)))
+      (replace-regexp-in-string "\r\n" "\n" s))))
+
+;; Fourth test: Final regression test against the golden file.
+(ert-deftest org-aws-iam-role/regression-test-against-golden-file ()
+  "Call the main view function and compare the created buffer against the golden file."
   (let ((test-role-name "test-iam-packageIamRole")
         (org-aws-iam-role-profile "williseed-iam-tester")
-        (output-buffer-name "*test-output-buffer*")
-        (generated-content ""))
+        (golden-file (expand-file-name
+                      "fixtures/integration-e2e-test-output.org"
+                      (file-name-directory (or load-file-name buffer-file-name)))))
+    (should (file-exists-p golden-file))
 
-    ;; Step 1: Call the main entry point. This creates the real buffer
-    ;; (e.g., "*IAM Role: test-iam-packageIamRole <timestamp>*") and
-    ;; starts the async process correctly.
+    ;; Call the main entry point to create the buffer.
     (org-aws-iam-role-view-details test-role-name)
-
-    ;; Step 2: Wait for the async operations to complete.
     (sleep-for 10)
 
-    ;; Step 3: Find the buffer that the package just created for us.
-    (let ((role-buffer
-           (cl-find-if (lambda (buf)
-                         (string-match-p
-                          (concat "\\*IAM Role: " (regexp-quote test-role-name))
-                          (buffer-name buf)))
-                       (buffer-list))))
+    (let* ((role-buffer
+            (cl-find-if (lambda (buf)
+                          (string-match-p
+                           (concat "\\*IAM Role: " (regexp-quote test-role-name))
+                           (buffer-name buf)))
+                        (buffer-list)))
+           (actual-content
+            (when role-buffer
+              (with-current-buffer role-buffer
+                (prog1 (buffer-string)
+                  (kill-buffer (current-buffer))))))
+           (expected-content
+            (with-temp-buffer
+              (insert-file-contents golden-file)
+              (buffer-string)))
+           (normalized-actual (org-aws-iam-role-test--normalize-string actual-content))
+           (normalized-expected (org-aws-iam-role-test--normalize-string expected-content)))
 
-      ;; If we found the buffer, grab its content.
-      (when role-buffer
-        (with-current-buffer role-buffer
-          (setq generated-content (buffer-string))
-          ;; Clean up by killing the buffer after we're done.
-          (kill-buffer (current-buffer)))))
+      (should normalized-actual) ;; Make sure we found the buffer.
+      (should (string= normalized-actual normalized-expected)))))
 
-    ;; Step 4: Write the captured content to our test output buffer for inspection.
-    (with-current-buffer (get-buffer-create output-buffer-name)
-      (erase-buffer)
-      (insert generated-content))
-
-    (message "Test output has been sent to the buffer: %s" output-buffer-name)
-    (should (get-buffer output-buffer-name))))
 
 (provide 'integration-e2e-test)
