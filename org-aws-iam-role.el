@@ -675,6 +675,7 @@ ROLE-NAME is the name of the parent IAM role."
   (insert "- =:detach t=     :: Detaches a *managed* policy from the current role.\n")
   (insert "\n** Keybindings\n")
   (insert "- =C-c C-e= :: Toggle read-only mode to allow/prevent edits.\n")
+  (insert "- =C-c C-s= :: Simulate the role's policies against specific actions.\n") ; <<< ADD THIS LINE
   (insert "- =C-c C-c= :: Inside a source block, apply changes to AWS.\n")
   (insert "- =C-c (= :: Hide all property drawers.\n")
   (insert "- =C-c )= :: Reveal all property drawers.\n\n"))
@@ -722,11 +723,11 @@ information."
   "Set keybinds, mode, and display the buffer BUF."
   (with-current-buffer buf
     (local-set-key (kbd "C-c C-e") #'org-aws-iam-role-toggle-read-only)
+    (local-set-key (kbd "C-c C-s") #'org-aws-iam-role-simulate-from-buffer) ; <<< ADD THIS LINE
     (local-set-key (kbd "C-c (") #'org-fold-hide-drawer-all)
     (local-set-key (kbd "C-c )") #'org-fold-show-all)
-    (goto-char (point-min))
-    (when org-aws-iam-role-read-only-by-default
-      (read-only-mode 1))
+    (goto-char (point-min))    (when org-aws-iam-role-read-only-by-default
+                                 (read-only-mode 1))
     (if org-aws-iam-role-show-folded-by-default
         (org-overview)
       (org-fold-show-all)))
@@ -746,6 +747,112 @@ information."
                            timestamp))
          (buf (get-buffer-create buf-name)))
     (org-aws-iam-role-populate-role-buffer role buf)))
+
+;;; Simulation Functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;###autoload
+(defun org-aws-iam-role-simulate-from-buffer ()
+  "Run a policy simulation using the ARN from the current role buffer."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (if (re-search-forward "^:ARN:[ \t]+\\(arn:aws:iam::.*\\)$" nil t)
+        (let ((role-arn (match-string 1)))
+          (org-aws-iam-role-simulate-policy-for-arn role-arn))
+      (user-error "Could not find a valid Role ARN in this buffer."))))
+
+(defun org-aws-iam-role-simulate-policy-for-arn (role-arn)
+  "Given a ROLE-ARN, prompt for an action and simulate the policy."
+  (let* ((actions-str (read-string "Action(s) to test (e.g., s3:ListObjects s3:Put*): "))
+         (resources-str (read-string "Resource ARN(s) (e.g., arn:aws:s3:::my-bucket/*): "))
+         ;; Split the input strings into lists, then format each item for the shell.
+         (action-args (mapconcat #'shell-quote-argument (split-string actions-str nil t " +") " "))
+         (resource-args (if (string-empty-p resources-str)
+                            ""
+                          (concat " --resource-arns "
+                                  (mapconcat #'shell-quote-argument (split-string resources-str nil t " +") " "))))
+         (cmd (format "aws iam simulate-principal-policy --policy-source-arn %s --action-names %s%s --output json%s"
+                      (shell-quote-argument role-arn)
+                      action-args
+                      resource-args
+                      (org-aws-iam-role--cli-profile-arg)))
+         (json (shell-command-to-string cmd))
+         (results (alist-get 'EvaluationResults (json-parse-string json :object-type 'alist :array-type 'list))))
+    (org-aws-iam-role-show-simulation-result results)))
+
+(defun org-aws-iam-role-show-simulation-result (results-list)
+  "Display the detailed results of a policy simulation in a new buffer."
+  (let ((buf (get-buffer-create "*IAM Simulation Result*")))
+    (with-current-buffer buf
+      (erase-buffer)
+      (org-aws-iam-role-insert-simulation-warning)
+      (unless results-list
+        (insert (propertize "No simulation results returned. Check the AWS CLI command for errors."
+                            'face 'error))
+        (pop-to-buffer buf)
+        (cl-return-from org-aws-iam-role-show-simulation-result))
+      (dolist (result-item results-list)
+        (org-aws-iam-role-insert-one-simulation-result result-item))
+      (goto-char (point-min))
+      (pop-to-buffer buf))))
+
+(defun org-aws-iam-role-insert-one-simulation-result (result-item)
+  "Parse and insert the formatted details for a single simulation RESULT-ITEM."
+  (let ((parsed-result (org-aws-iam-role-parse-simulation-result-item result-item)))
+    (org-aws-iam-role-insert-parsed-simulation-result parsed-result)))
+
+(defun org-aws-iam-role-insert-parsed-simulation-result (parsed-result)
+  "Insert a PARSED-RESULT plist into the current buffer."
+  (insert (propertize "====================================\n" 'face 'shadow))
+  (insert (propertize "Action: " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :action) 'face 'font-lock-function-name-face))
+  (insert "\n")
+  (insert (propertize "------------------------------------\n" 'face 'shadow))
+  (insert (propertize "Decision:         " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :decision) 'face (plist-get parsed-result :decision-face)))
+  (insert "\n")
+  (insert (propertize "Resource:         " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :resource) 'face 'font-lock-string-face))
+  (insert "\n")
+  (insert (propertize "Boundary Allowed: " 'face 'font-lock-keyword-face))
+  (insert (format "%s" (plist-get parsed-result :pb-allowed)))
+  (insert "\n")
+  (insert (propertize "Matched Policies: " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :policy-ids-str) 'face 'font-lock-doc-face))
+  (insert "\n")
+  (insert (propertize "Missing Context:  " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :missing-context-str) 'face 'font-lock-comment-face))
+  (insert "\n\n"))
+
+(defun org-aws-iam-role-parse-simulation-result-item (result-item)
+  "Parse a RESULT-ITEM from simulation into a plist for display."
+  (let* ((decision (alist-get 'EvalDecision result-item))
+         (pb-detail (alist-get 'PermissionsBoundaryDecisionDetail result-item))
+         (matched-statements (alist-get 'MatchedStatements result-item))
+         (policy-ids (if matched-statements
+                         (mapcar (lambda (stmt) (alist-get 'SourcePolicyId stmt)) matched-statements)
+                       '("None")))
+         (missing-context (alist-get 'MissingContextValues result-item)))
+    `(:action ,(alist-get 'EvalActionName result-item)
+      :decision ,decision
+      :resource ,(alist-get 'EvalResourceName result-item)
+      :pb-allowed ,(if pb-detail (alist-get 'AllowedByPermissionsBoundary pb-detail) "N/A")
+      :policy-ids-str ,(mapconcat #'identity policy-ids ", ")
+      :missing-context-str ,(if missing-context (mapconcat 'identity missing-context ", ") "None")
+      :decision-face ,(if (string= decision "allowed") 'success 'error))))
+
+(defun org-aws-iam-role-insert-simulation-warning ()
+  "Insert the standard simulation warning into the current buffer."
+  (let ((start (point)))
+    (insert "*** WARNING: Simplified Simulation ***\n")
+    (insert "This test only checks the role's identity-based policies against the given actions.\n")
+    (insert "- It does NOT include resource-based policies (e.g., S3 bucket policies).\n")
+    (insert "- It does NOT allow providing specific context keys (e.g., source IP, MFA).\n")
+    (insert "- Results ARE affected by Service Control Policies (SCPs).\n\n")
+    (insert "For comprehensive testing, use the AWS Console Policy Simulator.\n")
+    (insert "************************************\n\n")
+    (add-face-text-property start (point) 'font-lock-warning-face)))
 
 (provide 'org-aws-iam-role)
 ;;; org-aws-iam-role.el ends here
