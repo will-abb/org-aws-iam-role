@@ -818,6 +818,9 @@ information."
   (insert (propertize "Boundary Allowed: " 'face 'font-lock-keyword-face))
   (insert (format "%s" (plist-get parsed-result :pb-allowed)))
   (insert "\n")
+  (insert (propertize "Org Allowed:      " 'face 'font-lock-keyword-face))
+  (insert (format "%s" (plist-get parsed-result :org-allowed)))
+  (insert "\n")
   (insert (propertize "Matched Policies: " 'face 'font-lock-keyword-face))
   (insert (propertize (plist-get parsed-result :policy-ids-str) 'face 'font-lock-doc-face))
   (insert "\n")
@@ -825,10 +828,12 @@ information."
   (insert (propertize (plist-get parsed-result :missing-context-str) 'face 'font-lock-comment-face))
   (insert "\n\n"))
 
+
 (defun org-aws-iam-role-parse-simulation-result-item (result-item)
   "Parse a RESULT-ITEM from simulation into a plist for display."
   (let* ((decision (alist-get 'EvalDecision result-item))
          (pb-detail (alist-get 'PermissionsBoundaryDecisionDetail result-item))
+         (org-detail (alist-get 'OrganizationsDecisionDetail result-item))
          (matched-statements (alist-get 'MatchedStatements result-item))
          (policy-ids (if matched-statements
                          (mapcar (lambda (stmt) (alist-get 'SourcePolicyId stmt)) matched-statements)
@@ -838,6 +843,7 @@ information."
       :decision ,decision
       :resource ,(alist-get 'EvalResourceName result-item)
       :pb-allowed ,(if pb-detail (alist-get 'AllowedByPermissionsBoundary pb-detail) "N/A")
+      :org-allowed ,(if org-detail (alist-get 'AllowedByOrganizations org-detail) "N/A")
       :policy-ids-str ,(mapconcat #'identity policy-ids ", ")
       :missing-context-str ,(if missing-context (mapconcat 'identity missing-context ", ") "None")
       :decision-face ,(if (string= decision "allowed") 'success 'error))))
