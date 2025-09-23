@@ -764,9 +764,30 @@ information."
   (save-excursion
     (goto-char (point-min))
     (if (re-search-forward "^:ARN:[ \t]+\\(arn:aws:iam::.*\\)$" nil t)
-        (let ((role-arn (match-string 1)))
-          (org-aws-iam-role-simulate-policy-for-arn role-arn))
+        (org-aws-iam-role-simulate (match-string 1))
       (user-error "Could not find a valid Role ARN in this buffer."))))
+
+(defun org-aws-iam-role-simulate (&optional role-arn)
+  "Run a policy simulation for ROLE-ARN.
+If ROLE-ARN is nil, prompt for a role and fetch its ARN.
+This is the core entry point for all simulations."
+  (interactive)
+  (let* ((role-arn (or role-arn
+                       (let* ((roles (org-aws-iam-role-list-names))
+                              (role-name (completing-read "IAM Role: " roles)))
+                         (org-aws-iam-role-arn
+                          (org-aws-iam-role-construct
+                           (org-aws-iam-role-get-full role-name)))))))
+    (setq org-aws-iam-role--last-simulate-role role-arn)
+    (org-aws-iam-role-simulate-policy-for-arn role-arn)))
+
+(defun org-aws-iam-role-rerun-simulation ()
+  "Re-run a simulation using the last stored role ARN.
+If none is stored, prompt for a role from AWS."
+  (interactive)
+  (if org-aws-iam-role--last-simulate-role
+      (org-aws-iam-role-simulate org-aws-iam-role--last-simulate-role)
+    (org-aws-iam-role-simulate)))
 
 (defun org-aws-iam-role-simulate-policy-for-arn (role-arn)
   "Given a ROLE-ARN, prompt for an action and simulate the policy."
@@ -791,7 +812,6 @@ information."
     (setq org-aws-iam-role--last-simulate-role role-arn)
     (setq org-aws-iam-role--last-simulate-result json)
     (org-aws-iam-role-show-simulation-result results)))
-
 
 (defun org-aws-iam-role-show-simulation-result (results-list &optional raw-json)
   "Display the detailed results of a policy simulation in a new buffer."
@@ -824,9 +844,6 @@ information."
       (local-set-key (kbd "C-c C-c") #'org-aws-iam-role-rerun-simulation)
       (pop-to-buffer buf))))
 
-
-
-
 (defun org-aws-iam-role-show-raw-json ()
   "Show the raw JSON from the last IAM simulation."
   (interactive)
@@ -845,7 +862,6 @@ information."
         (when (fboundp 'json-mode)
           (json-mode)))
       (pop-to-buffer buf))))
-
 
 (defun org-aws-iam-role-insert-one-simulation-result (result-item)
   "Parse and insert the formatted details for a single simulation RESULT-ITEM."
@@ -880,7 +896,6 @@ information."
   (insert (propertize (plist-get parsed-result :missing-context-str) 'face 'shadow))
   (insert "\n\n"))
 
-
 (defun org-aws-iam-role-parse-simulation-result-item (result-item)
   "Parse a RESULT-ITEM from simulation into a plist for display."
   (let* ((decision (alist-get 'EvalDecision result-item))
@@ -900,7 +915,6 @@ information."
       :missing-context-str ,(if missing-context (mapconcat 'identity missing-context ", ") "None")
       :decision-face ,(if (string= decision "allowed") 'success 'error))))
 
-
 (defun org-aws-iam-role-insert-simulation-warning ()
   "Insert the standard simulation warning into the current buffer."
   (let ((start (point)))
@@ -912,22 +926,6 @@ information."
     (insert "For comprehensive testing, use the AWS Console Policy Simulator.\n")
     (insert "************************************\n\n")
     (add-face-text-property start (point) 'font-lock-warning-face)))
-
-(defun org-aws-iam-role-rerun-simulation ()
-  "Re-run a simulation using the last stored role ARN.
-If none is stored, prompt for a role from AWS and use its ARN."
-  (interactive)
-  (let ((role-arn org-aws-iam-role--last-simulate-role))
-    (unless role-arn
-      (let* ((roles (org-aws-iam-role-list-names))
-             (role-name (completing-read "IAM Role: " roles)))
-        ;; Fetch the full role object so we get the real ARN
-        (setq role-arn (org-aws-iam-role-arn (org-aws-iam-role-construct
-                                              (org-aws-iam-role-get-full role-name))))
-        (message "Using role ARN: %s" role-arn)))
-    ;; Save for future reruns
-    (setq org-aws-iam-role--last-simulate-role role-arn)
-    (org-aws-iam-role-simulate-policy-for-arn role-arn)))
 
 (provide 'org-aws-iam-role)
 ;;; org-aws-iam-role.el ends here
