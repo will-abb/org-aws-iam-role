@@ -751,6 +751,9 @@ information."
 ;;; Simulation Functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defvar org-aws-iam-role--last-simulate-result nil
+  "Holds the raw JSON string from the last IAM simulate-principal-policy run.")
+
 ;;;###autoload
 (defun org-aws-iam-role-simulate-from-buffer ()
   "Run a policy simulation using the ARN from the current role buffer."
@@ -766,7 +769,6 @@ information."
   "Given a ROLE-ARN, prompt for an action and simulate the policy."
   (let* ((actions-str (read-string "Action(s) to test (e.g., s3:ListObjects s3:Put*): "))
          (resources-str (read-string "Resource ARN(s) (e.g., arn:aws:s3:::my-bucket/*): "))
-         ;; Split the input strings into lists, then format each item for the shell.
          (action-args (mapconcat #'shell-quote-argument (split-string actions-str nil t " +") " "))
          (resource-args (if (string-empty-p resources-str)
                             ""
@@ -777,15 +779,32 @@ information."
                       action-args
                       resource-args
                       (org-aws-iam-role--cli-profile-arg)))
-         (json (shell-command-to-string cmd))
-         (results (alist-get 'EvaluationResults (json-parse-string json :object-type 'alist :array-type 'list))))
+         (json (or (shell-command-to-string cmd) "")) ;; always a string
+         (results (condition-case nil
+                      (alist-get 'EvaluationResults
+                                 (json-parse-string json :object-type 'alist :array-type 'list))
+                    (error nil))))
+    ;; Save JSON globally
+    (setq org-aws-iam-role--last-simulate-result json)
     (org-aws-iam-role-show-simulation-result results)))
 
-(defun org-aws-iam-role-show-simulation-result (results-list)
+(defun org-aws-iam-role-show-simulation-result (results-list &optional raw-json)
   "Display the detailed results of a policy simulation in a new buffer."
   (let ((buf (get-buffer-create "*IAM Simulation Result*")))
     (with-current-buffer buf
       (erase-buffer)
+      (insert (propertize "Press C-c C-j to view raw JSON output\n"
+                          'face 'font-lock-comment-face))
+      (insert (propertize "Full list of AWS actions: "
+                          'face 'font-lock-comment-face))
+      (insert-button
+       "Service Authorization Reference"
+       'action (lambda (_)
+                 (browse-url
+                  "https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html"))
+       'follow-link t
+       'face 'link)
+      (insert "\n\n")
       (org-aws-iam-role-insert-simulation-warning)
       (unless results-list
         (insert (propertize "No simulation results returned. Check the AWS CLI command for errors."
@@ -795,7 +814,32 @@ information."
       (dolist (result-item results-list)
         (org-aws-iam-role-insert-one-simulation-result result-item))
       (goto-char (point-min))
+      ;; Keybinding: C-c C-j shows raw JSON
+      (use-local-map (copy-keymap special-mode-map))
+      (local-set-key (kbd "C-c C-j") #'org-aws-iam-role-show-raw-json)
       (pop-to-buffer buf))))
+
+
+
+(defun org-aws-iam-role-show-raw-json ()
+  "Show the raw JSON from the last IAM simulation."
+  (interactive)
+  (if (not (and org-aws-iam-role--last-simulate-result
+                (stringp org-aws-iam-role--last-simulate-result)
+                (not (string-empty-p org-aws-iam-role--last-simulate-result))))
+      (user-error "No JSON stored from last simulation")
+    (let ((buf (get-buffer-create "*IAM Simulate Result JSON*")))
+      (with-current-buffer buf
+        (erase-buffer)
+        (insert org-aws-iam-role--last-simulate-result)
+        (condition-case nil
+            (json-pretty-print-buffer)
+          (error (message "Warning: could not pretty-print JSON")))
+        (goto-char (point-min))
+        (when (fboundp 'json-mode)
+          (json-mode)))
+      (pop-to-buffer buf))))
+
 
 (defun org-aws-iam-role-insert-one-simulation-result (result-item)
   "Parse and insert the formatted details for a single simulation RESULT-ITEM."
