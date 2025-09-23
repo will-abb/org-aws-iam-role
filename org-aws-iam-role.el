@@ -813,19 +813,21 @@ information."
   (insert (propertize (plist-get parsed-result :decision) 'face (plist-get parsed-result :decision-face)))
   (insert "\n")
   (insert (propertize "Resource:         " 'face 'font-lock-keyword-face))
-  (insert (propertize (plist-get parsed-result :resource) 'face 'font-lock-string-face))
+  (insert (propertize (plist-get parsed-result :resource) 'face 'shadow))
   (insert "\n")
   (insert (propertize "Boundary Allowed: " 'face 'font-lock-keyword-face))
-  (insert (format "%s" (plist-get parsed-result :pb-allowed)))
+  (let ((pb (plist-get parsed-result :pb-allowed)))
+    (insert (propertize (if pb "true" "false") 'face (if pb 'success 'error))))
   (insert "\n")
   (insert (propertize "Org Allowed:      " 'face 'font-lock-keyword-face))
-  (insert (format "%s" (plist-get parsed-result :org-allowed)))
+  (let ((org (plist-get parsed-result :org-allowed)))
+    (insert (propertize (if org "true" "false") 'face (if org 'success 'error))))
   (insert "\n")
   (insert (propertize "Matched Policies: " 'face 'font-lock-keyword-face))
-  (insert (propertize (plist-get parsed-result :policy-ids-str) 'face 'font-lock-doc-face))
+  (insert (propertize (plist-get parsed-result :policy-ids-str) 'face 'shadow))
   (insert "\n")
   (insert (propertize "Missing Context:  " 'face 'font-lock-keyword-face))
-  (insert (propertize (plist-get parsed-result :missing-context-str) 'face 'font-lock-comment-face))
+  (insert (propertize (plist-get parsed-result :missing-context-str) 'face 'shadow))
   (insert "\n\n"))
 
 
@@ -842,11 +844,12 @@ information."
     `(:action ,(alist-get 'EvalActionName result-item)
       :decision ,decision
       :resource ,(alist-get 'EvalResourceName result-item)
-      :pb-allowed ,(if pb-detail (alist-get 'AllowedByPermissionsBoundary pb-detail) "N/A")
-      :org-allowed ,(if org-detail (alist-get 'AllowedByOrganizations org-detail) "N/A")
+      :pb-allowed ,(if pb-detail (alist-get 'AllowedByPermissionsBoundary pb-detail) nil)
+      :org-allowed ,(if org-detail (alist-get 'AllowedByOrganizations org-detail) nil)
       :policy-ids-str ,(mapconcat #'identity policy-ids ", ")
       :missing-context-str ,(if missing-context (mapconcat 'identity missing-context ", ") "None")
       :decision-face ,(if (string= decision "allowed") 'success 'error))))
+
 
 (defun org-aws-iam-role-insert-simulation-warning ()
   "Insert the standard simulation warning into the current buffer."
