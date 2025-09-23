@@ -754,6 +754,9 @@ information."
 (defvar org-aws-iam-role--last-simulate-result nil
   "Holds the raw JSON string from the last IAM simulate-principal-policy run.")
 
+(defvar org-aws-iam-role--last-simulate-role nil
+  "Holds the last IAM Role ARN used for simulate-principal-policy.")
+
 ;;;###autoload
 (defun org-aws-iam-role-simulate-from-buffer ()
   "Run a policy simulation using the ARN from the current role buffer."
@@ -784,19 +787,20 @@ information."
                       (alist-get 'EvaluationResults
                                  (json-parse-string json :object-type 'alist :array-type 'list))
                     (error nil))))
-    ;; Save JSON globally
+    ;; Save role ARN and JSON globally
+    (setq org-aws-iam-role--last-simulate-role role-arn)
     (setq org-aws-iam-role--last-simulate-result json)
     (org-aws-iam-role-show-simulation-result results)))
+
 
 (defun org-aws-iam-role-show-simulation-result (results-list &optional raw-json)
   "Display the detailed results of a policy simulation in a new buffer."
   (let ((buf (get-buffer-create "*IAM Simulation Result*")))
     (with-current-buffer buf
       (erase-buffer)
-      (insert (propertize "Press C-c C-j to view raw JSON output\n"
-                          'face 'font-lock-comment-face))
-      (insert (propertize "Full list of AWS actions: "
-                          'face 'font-lock-comment-face))
+      (insert (propertize "Press C-c C-j to view raw JSON output\n" 'face 'font-lock-comment-face))
+      (insert (propertize "Press C-c C-c to rerun the simulation for the last role\n\n" 'face 'font-lock-comment-face))
+      (insert (propertize "Full list of AWS actions: " 'face 'font-lock-comment-face))
       (insert-button
        "Service Authorization Reference"
        'action (lambda (_)
@@ -814,10 +818,12 @@ information."
       (dolist (result-item results-list)
         (org-aws-iam-role-insert-one-simulation-result result-item))
       (goto-char (point-min))
-      ;; Keybinding: C-c C-j shows raw JSON
+      ;; Keybindings
       (use-local-map (copy-keymap special-mode-map))
       (local-set-key (kbd "C-c C-j") #'org-aws-iam-role-show-raw-json)
+      (local-set-key (kbd "C-c C-c") #'org-aws-iam-role-rerun-simulation)
       (pop-to-buffer buf))))
+
 
 
 
@@ -906,6 +912,22 @@ information."
     (insert "For comprehensive testing, use the AWS Console Policy Simulator.\n")
     (insert "************************************\n\n")
     (add-face-text-property start (point) 'font-lock-warning-face)))
+
+(defun org-aws-iam-role-rerun-simulation ()
+  "Re-run a simulation using the last stored role ARN.
+If none is stored, prompt for a role from AWS and use its ARN."
+  (interactive)
+  (let ((role-arn org-aws-iam-role--last-simulate-role))
+    (unless role-arn
+      (let* ((roles (org-aws-iam-role-list-names))
+             (role-name (completing-read "IAM Role: " roles)))
+        ;; Fetch the full role object so we get the real ARN
+        (setq role-arn (org-aws-iam-role-arn (org-aws-iam-role-construct
+                                              (org-aws-iam-role-get-full role-name))))
+        (message "Using role ARN: %s" role-arn)))
+    ;; Save for future reruns
+    (setq org-aws-iam-role--last-simulate-role role-arn)
+    (org-aws-iam-role-simulate-policy-for-arn role-arn)))
 
 (provide 'org-aws-iam-role)
 ;;; org-aws-iam-role.el ends here
