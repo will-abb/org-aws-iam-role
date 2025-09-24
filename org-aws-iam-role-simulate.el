@@ -5,18 +5,10 @@
 ;; Author: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Maintainer: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Created: August 16, 2025
-;; Version: 1.1.0
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; This file is part of org-aws-iam-role.
-;; For license information, see `org-aws-iam-role.el`.
-
-;;; Commentary:
-;;
-;; This library provides the AWS IAM Policy Simulation features for
-;; `org-aws-iam-role.el`.
-
-;;; Code:
+;; This file is part of the org-aws-iam-role package.
+;; For version and dependency information, see org-aws-iam-role.el.
 
 (require 'json)
 (require 'org-aws-iam-role)

@@ -5,8 +5,8 @@
 ;; Author: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Maintainer: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Created: August 16, 2025
-;; Version: 1.1.0
-;; Package-Version: 1.1.0
+;; Version: 1.2.0
+;; Package-Version: 1.2.0
 ;; Package-Requires: (emacs "29.1")
 ;; Keywords: aws, iam, org, babel, tools
 ;; URL: https://github.com/will-abb/org-aws-iam-role
@@ -130,7 +130,7 @@ If ROLE-NAME is provided programmatically, skip prompting."
   (let* ((cmd (format "aws sts get-caller-identity --output json%s"
                       (org-aws-iam-role--cli-profile-arg)))
          (exit-code (shell-command cmd nil nil)))
-    ;; A non-zero exit code from the AWS CLI indicates an error (e.g., bad credentials).
+    ;; A non-zero exit code from the AWS CLI indicates an error like bad credentials).
     (unless (eq exit-code 0)
       (user-error "AWS CLI not authenticated: please check your credentials or AWS_PROFILE"))))
 
@@ -538,7 +538,7 @@ ROLE-NAME is the name of the parent IAM role."
   (insert "- =:detach t=     :: Detaches a *managed* policy from the current role.\n")
   (insert "\n** Keybindings\n")
   (insert "- =C-c C-e= :: Toggle read-only mode to allow/prevent edits.\n")
-  (insert "- =C-c C-s= :: Simulate the role's policies against specific actions.\n") ; <<< ADD THIS LINE
+  (insert "- =C-c C-s= :: Simulate the role's policies against specific actions.\n")
   (insert "- =C-c C-c= :: Inside a source block, apply changes to AWS.\n")
   (insert "- =C-c (= :: Hide all property drawers.\n")
   (insert "- =C-c )= :: Reveal all property drawers.\n\n"))
@@ -586,7 +586,7 @@ information."
   "Set keybinds, mode, and display the buffer BUF."
   (with-current-buffer buf
     (local-set-key (kbd "C-c C-e") #'org-aws-iam-role-toggle-read-only)
-    (local-set-key (kbd "C-c C-s") #'org-aws-iam-role-simulate-from-buffer) ; <<< ADD THIS LINE
+    (local-set-key (kbd "C-c C-s") #'org-aws-iam-role-simulate-from-buffer)
     (local-set-key (kbd "C-c (") #'org-fold-hide-drawer-all)
     (local-set-key (kbd "C-c )") #'org-fold-show-all)
     (goto-char (point-min))    (when org-aws-iam-role-read-only-by-default
