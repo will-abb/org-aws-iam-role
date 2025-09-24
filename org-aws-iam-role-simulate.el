@@ -5,10 +5,45 @@
 ;; Author: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Maintainer: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Created: August 16, 2025
+;; Version: 1.2.0
+;; Package-Version: 1.2.0
+;; Package-Requires: ((emacs "29.1"))
+;; Keywords: aws, iam, org, babel, tools
+;; URL: https://github.com/will-abb/org-aws-iam-role
+;; Homepage: https://github.com/will-abb/org-aws-iam-role
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; This file is part of the org-aws-iam-role package.
-;; For version and dependency information, see org-aws-iam-role.el.
+;; This file is part of org-aws-iam-role.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; Provides functions to run AWS IAM policy simulations directly within
+;; Emacs. The package integrates the AWS CLI `simulate-principal-policy`
+;; command with Org-mode role buffers and displays results interactively.
+;;
+;; Features include:
+;; - Running policy simulations for selected IAM roles.
+;; - Interactive prompts for actions and resources to test.
+;; - Display of evaluation results, including decisions and matched
+;;   policies, in a dedicated buffer.
+;; - Support for rerunning the last simulation quickly.
+;; - Optional access to the raw JSON output of simulation results.
+;; - Integrated keybindings for navigating simulation output.
+
+;;; Code:
 
 (require 'json)
 (require 'org-aws-iam-role)
@@ -41,7 +76,7 @@
     (org-aws-iam-role-simulate-policy-for-arn role-arn)))
 
 (defun org-aws-iam-role-rerun-simulation ()
-  "Re-run a simulation using the last stored role ARN."
+  "Run a simulation using the last stored ROLE-ARN."
   (interactive)
   (if org-aws-iam-role--last-simulate-role
       (org-aws-iam-role-simulate org-aws-iam-role--last-simulate-role)
@@ -77,7 +112,7 @@
       (org-aws-iam-role-show-simulation-result results))))
 
 (defun org-aws-iam-role-show-simulation-result (results-list &optional raw-json)
-  "Display the detailed RESULTS-LIST of a policy simulation in a new buffer.
+  "Display RESULTS-LIST from a policy simulation in a new buffer.
 Optional argument RAW-JSON is unused and reserved for future extensions."
   (let* ((role-name (if org-aws-iam-role--last-simulate-role
                         (car (last (split-string org-aws-iam-role--last-simulate-role "/")))

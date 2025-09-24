@@ -1,19 +1,47 @@
-;;; ob-aws-iam.el --- Org Babel functions for `aws-iam` -*- lexical-binding: t; -*-
+;;; ob-aws-iam.el --- Org Babel functions for aws-iam -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025 William Bosch-Bello
 
 ;; Author: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Maintainer: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Created: August 16, 2025
+;; Version: 1.2.0
+;; Package-Version: 1.2.0
+;; Package-Requires: ((emacs "29.1"))
+;; Keywords: aws, iam, org, babel, tools
+;; URL: https://github.com/will-abb/org-aws-iam-role
+;; Homepage: https://github.com/will-abb/org-aws-iam-role
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;; This file is part of the org-aws-iam-role package.
-;; For version and dependency information, see org-aws-iam-role.el.
+;; This file is part of org-aws-iam-role.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
+
+;; Provides the Org Babel execution logic for the `aws-iam` language,
+;; used by `org-aws-iam-role.el` to manage AWS IAM policies. This file
+;; defines the commands that translate Org Babel blocks into AWS CLI
+;; invocations for trust policies, inline policies, and managed
+;; policies.
 ;;
-;; This library provides the Org Babel execution logic for the `aws-iam`
-;; language, used by `org-aws-iam-role.el` to manage AWS IAM policies.
+;; Features include:
+;; - Updating trust policies with `aws iam update-assume-role-policy`.
+;; - Managing inline role policies with `aws iam put-role-policy`.
+;; - Creating, deleting, and detaching customer-managed policies.
+;; - Integration with Org Babel execution via `org-babel-execute:aws-iam`.
+;; - Safety prompts before destructive actions such as delete/detach.
 
 ;;; Code:
 
@@ -165,8 +193,3 @@ PARAMS should include header arguments such as :ROLE-NAME, :POLICY-NAME,
 
 (provide 'ob-aws-iam)
 ;;; ob-aws-iam.el ends here
-
-
-
-
-
