@@ -1,19 +1,17 @@
-;;; org-aws-iam-role.el --- Browse and modify AWS IAM Roles in Org Babel -*- lexical-binding: t; -*-
+;;; org-aws-iam-role.el --- Browse, modify, and simulate AWS IAM Roles in Org Babel -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025 William Bosch-Bello
 
 ;; Author: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Maintainer: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Created: August 16, 2025
-;; Version: 1.2.0
-;; Package-Version: 1.2.0
+;; Version: 1.2.1
+;; Package-Version: 1.2.1
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: aws, iam, org, babel, tools
 ;; URL: https://github.com/will-abb/org-aws-iam-role
 ;; Homepage: https://github.com/will-abb/org-aws-iam-role
 ;; SPDX-License-Identifier: GPL-3.0-or-later
-
-;; This file is part of org-aws-iam-role.
 
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -72,9 +70,9 @@
 (require 'ob-shell)
 (require 'org)
 
-(add-to-list 'org-babel-load-languages '(aws-iam . t))
-(add-to-list 'org-src-lang-modes '(("aws-iam" . json)
-                                   ("json" . json)))
+(add-to-list 'org-babel-load-languages '(shell . t))
+(add-to-list 'org-src-lang-modes '("aws-iam" . json))
+(add-to-list 'org-src-lang-modes '("json" . json))
 
 (defvar org-aws-iam-role-profile nil
   "Default AWS CLI profile to use for IAM role operations.
@@ -729,19 +727,12 @@ information."
       (pop-to-buffer buf))))
 
 (defun org-aws-iam-role-simulate-show-raw-json ()
-  "Show the raw JSON from the last IAM simulation."
+  "Show the raw JSON from the last IAM simulation in the current buffer."
   (interactive)
-  (let* ((sim-buf (cl-find-if
-                   (lambda (b)
-                     (with-current-buffer b
-                       (bound-and-true-p org-aws-iam-role-simulate--last-result)))
-                   (buffer-list)))
-         (json (and sim-buf
-                    (buffer-local-value 'org-aws-iam-role-simulate--last-result sim-buf)))
-         (role-arn (and sim-buf
-                        (buffer-local-value 'org-aws-iam-role-simulate--last-role sim-buf))))
+  (let* ((json org-aws-iam-role-simulate--last-result)
+         (role-arn org-aws-iam-role-simulate--last-role))
     (if (not (and json (stringp json) (not (string-empty-p json))))
-        (user-error "No JSON stored from last simulation")
+        (user-error "No JSON stored from the last simulation in this buffer")
       (let* ((role-name (if role-arn
                             (car (last (split-string role-arn "/")))
                           "unknown-role"))
