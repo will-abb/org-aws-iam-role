@@ -5,8 +5,8 @@
 ;; Author: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Maintainer: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Created: August 16, 2025
-;; Version: 1.2.1
-;; Package-Version: 1.2.1
+;; Version: 1.2.2
+;; Package-Version: 1.2.2
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: aws, iam, org, babel, tools
 ;; URL: https://github.com/will-abb/org-aws-iam-role
@@ -649,7 +649,10 @@ information."
     (org-aws-iam-role-simulate)))
 
 (defun org-aws-iam-role-simulate--build-cli-command (role-arn actions-str resources-str)
-  "Build the `simulate-principal-policy` command string."
+  "Build the `simulate-principal-policy` command string.
+Argument ROLE-ARN is the ARN of the role to simulate.
+Argument ACTIONS-STR is a space-separated string of actions.
+Argument RESOURCES-STR is a space-separated string of resource ARNs."
   (let ((action-args (mapconcat #'shell-quote-argument (split-string actions-str nil t " +") " "))
         (resource-args (if (string-empty-p resources-str)
                            ""
@@ -896,7 +899,11 @@ POLICY-ARN is the ARN of the managed policy."
     (user-error "Aborted by user")))
 
 (defun org-aws-iam-role--babel-handle-delete (role-name policy-name policy-arn policy-type)
-  "Handle the :delete action for `aws-iam' babel blocks."
+  "Handle the :delete action for `aws-iam' babel blocks.
+Argument ROLE-NAME is the name of the IAM role.
+Argument POLICY-NAME is the name of the policy.
+Argument POLICY-ARN is the ARN of the policy.
+Argument POLICY-TYPE is the type of the policy."
   (let (cmd action-desc)
     (cond
      ((eq policy-type 'inline)
@@ -909,7 +916,11 @@ POLICY-ARN is the ARN of the managed policy."
     (org-aws-iam-role--babel-confirm-and-run cmd action-desc)))
 
 (defun org-aws-iam-role--babel-handle-detach (role-name policy-name policy-arn policy-type)
-  "Handle the :detach action for `aws-iam' babel blocks."
+  "Handle the :detach action for `aws-iam' babel blocks.
+Argument ROLE-NAME is the name of the IAM role.
+Argument POLICY-NAME is the name of the policy.
+Argument POLICY-ARN is the ARN of the policy.
+Argument POLICY-TYPE is the type of the policy."
   (when (eq policy-type 'inline)
     (user-error "Cannot detach an 'inline' policy. Use :delete instead"))
   (let ((action-desc (format "Detach policy '%s' from role '%s'" (or policy-name policy-arn) role-name))
@@ -917,7 +928,10 @@ POLICY-ARN is the ARN of the managed policy."
     (org-aws-iam-role--babel-confirm-and-run cmd action-desc)))
 
 (defun org-aws-iam-role--babel-handle-create (policy-name policy-type body)
-  "Handle the :create action for `aws-iam' babel blocks."
+  "Handle the :create action for `aws-iam' babel blocks.
+Argument POLICY-NAME is the name of the new policy.
+Argument POLICY-TYPE is the type of the policy.
+Argument BODY is the JSON content of the policy."
   (if (eq policy-type 'customer-managed)
       (let* ((json-string (json-encode (json-read-from-string body)))
              (action-desc (format "Create new customer managed policy '%s'" policy-name))
@@ -926,7 +940,12 @@ POLICY-ARN is the ARN of the managed policy."
     (user-error "The :CREATE flag is only for 'customer-managed' policies. For inline policies, execute without it")))
 
 (defun org-aws-iam-role--babel-handle-update (role-name policy-name policy-arn policy-type body)
-  "Handle the default update action for `aws-iam' babel blocks."
+  "Handle the default update action for `aws-iam' babel blocks.
+Argument ROLE-NAME is the name of the IAM role.
+Argument POLICY-NAME is the name of the policy.
+Argument POLICY-ARN is the ARN of the policy.
+Argument POLICY-TYPE is the type of the policy.
+Argument BODY is the JSON content of the policy."
   (let* ((json-string (json-encode (json-read-from-string body)))
          (action-desc (format "Update %s for role '%s'"
                               (if (eq policy-type 'trust-policy) "Trust Policy" (format "policy '%s'" policy-name))
