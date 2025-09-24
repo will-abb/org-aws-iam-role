@@ -70,9 +70,9 @@
 (require 'ob-shell)
 (require 'org)
 
-(add-to-list 'org-babel-load-languages '(aws-iam . t))
-(add-to-list 'org-src-lang-modes '(("aws-iam" . json)
-                                   ("json" . json)))
+(add-to-list 'org-babel-load-languages '(shell . t))
+(add-to-list 'org-src-lang-modes '("aws-iam" . json))
+(add-to-list 'org-src-lang-modes '("json" . json))
 
 (defvar org-aws-iam-role-profile nil
   "Default AWS CLI profile to use for IAM role operations.
