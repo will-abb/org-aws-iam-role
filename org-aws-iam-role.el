@@ -7,7 +7,7 @@
 ;; Created: August 16, 2025
 ;; Version: 1.2.0
 ;; Package-Version: 1.2.0
-;; Package-Requires: ((emacs "29.1") (org "9.6") (async "1.9") (promise "1.1"))
+;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: aws, iam, org, babel, tools
 ;; URL: https://github.com/will-abb/org-aws-iam-role
 ;; Homepage: https://github.com/will-abb/org-aws-iam-role
@@ -36,19 +36,32 @@
 ;; detailed Org mode buffer and uses a custom Org Babel language,
 ;; `aws-iam`, to apply policy changes via the AWS CLI.
 
-;; Features include:
+;; Key Features:
 ;; - Interactive browsing and selection of IAM roles.
 ;; - Full display of all policy types: Trust Policy, Permissions Boundary,
-;; AWS-Managed, Customer-Managed, and Inline policies.
-;; - Direct modification of any policy through Org Babel source blocks.
+;;   AWS-Managed, Customer-Managed, and Inline policies.
+;; - Direct modification of any policy through Org Babel source blocks. Use
+;;   header arguments like `:create`, `:delete`, or `:detach` for full
+;;   CRUD (Create, Read, Update, Delete) operations.
+;; - Built-in IAM Policy Simulator to test a role's permissions against
+;;   specific AWS actions and resources.
 ;; - Asynchronous fetching of initial role and policy data for a fast UI.
-;; - Safe by default: buffer opens in read-only mode to prevent accidents.
+;; - Safe by default: the role viewer buffer opens in read-only mode.
+;; - Ability to easily switch between different AWS profiles.
 ;; - Clear feedback on command success or failure in Babel results blocks.
-;; - Integrated keybindings for a smooth workflow:
-;; - C-c C-e: Toggle read-only mode to enable/disable editing.
-;; - C-c C-c: Apply changes for the policy under the cursor to AWS.
-;; - C-c ( / C-c ): Hide or reveal all property drawers.
 
+;; Keybindings:
+;;
+;; In the IAM Role Viewer Buffer:
+;; - C-c C-e: Toggle read-only mode to enable/disable editing.
+;; - C-c C-s: Simulate the role's policies against specific actions.
+;; - C-c C-c: Inside a source block, apply changes to AWS.
+;; - C-c (:   Hide all property drawers.
+;; - C-c ):   Reveal all property drawers.
+;;
+;; In the Simulation Results Buffer:
+;; - C-c C-c: Rerun the simulation for the last used role.
+;; - C-c C-j: View the raw JSON output from the simulation API call.
 ;;; Code:
 
 (require 'cl-lib)
@@ -117,8 +130,7 @@ If ROLE-NAME is provided programmatically, skip prompting."
       (read-only-mode 1)
       (message "Buffer is now read-only."))))
 
-;;; Internal Helpers & Structs
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; Internal Helpers & Structs ;;;;;
 
 (defun org-aws-iam-role--cli-profile-arg ()
   "Return the AWS CLI profile argument string, or an empty string."
@@ -178,8 +190,7 @@ Argument TAGS is a list of alists of the form
   document tags)
 
 
-;;; IAM Policy Data Functions
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; IAM Policy Data Functions ;;;;;
 
 (defun org-aws-iam-role-policy-get-metadata-async (policy-arn)
   "Fetch policy metadata JSON asynchronously for POLICY-ARN.
@@ -297,8 +308,7 @@ Returns a promise that resolves with the `org-aws-iam-role-policy` struct."
               (org-aws-iam-role-inline-policy--construct-from-json policy-name json))))))
 
 
-;;; IAM Role Data Functions
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; IAM Role Data Functions ;;;;;
 
 (defun org-aws-iam-role--fetch-roles-page (marker)
   "Fetch a single page of IAM roles from AWS.
@@ -319,7 +329,7 @@ Returns a cons cell: (LIST-OF-ROLES . NEXT-MARKER)."
   (let ((all-roles '())
         (marker nil)
         (first-run t))
-    ;; Loop until the AWS API returns no more pages (i.e., the marker is nil).
+    ;; Loop until the AWS API returns no more pages.
     ;; The `first-run` flag ensures the loop runs at least once when marker starts as nil.
     (while (or first-run marker)
       (let* ((page-result (org-aws-iam-role--fetch-roles-page marker))
@@ -392,8 +402,7 @@ Each bucket keeps the full alist for each policy item."
           (push p customer))))
     (cons (nreverse customer) (nreverse aws))))
 
-;;; Display Functions
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;; Display Functions ;;;;;
 
 (defun org-aws-iam-role-insert-role-header (role)
   "Insert the main heading and properties for ROLE into the buffer."
@@ -612,7 +621,7 @@ information."
          (buf (get-buffer-create buf-name)))
     (org-aws-iam-role-populate-role-buffer role buf)))
 
-;; simulation code start ;;
+;;;;; Simulation Code Start ;;;;;
 (defun org-aws-iam-role-simulate-from-buffer ()
   "Run a policy simulation using the ARN from the current role buffer."
   (interactive)
@@ -660,7 +669,6 @@ information."
                       (alist-get 'EvaluationResults
                                  (json-parse-string json :object-type 'alist :array-type 'list))
                     (error nil))))
-    ;; Create result buffer and save locals there
     (let* ((role-name (car (last (split-string role-arn "/"))))
            (timestamp (format-time-string "%Y%m%d-%H%M%S"))
            (buf (get-buffer-create
@@ -786,7 +794,7 @@ information."
       :org-allowed ,(if org-detail (alist-get 'AllowedByOrganizations org-detail) nil)
       :policy-ids-str ,(mapconcat #'identity policy-ids ", ")
       :missing-context-str ,(if missing-context (mapconcat 'identity missing-context ", ") "None")
-      :decision-face ,(if (string= decision "allowed") #'success #'error))))
+      :decision-face ,(if (string= decision "allowed") 'success #'error))))
 
 (defun org-aws-iam-role-simulate--insert-warning ()
   "Insert the standard simulation warning into the current buffer."
@@ -800,9 +808,8 @@ information."
     (insert "************************************\n\n")
     (add-face-text-property start (point) 'font-lock-warning-face)))
 
-;; simulation code end ;;
 
-;;iam babel code start ;;
+;;;;; Iam Babel Code Start ;;;;;
 (defun org-aws-iam-role--babel-cmd-for-trust-policy (role-name policy-document)
   "Return the AWS CLI command to update a trust policy for ROLE-NAME.
 POLICY-DOCUMENT is the trust policy JSON string."
@@ -945,7 +952,6 @@ PARAMS should include header arguments such as :ROLE-NAME, :POLICY-NAME,
                 "Success!"
               result)))
       (user-error "Aborted by user"))))
-;;iam babel code end ;;
 
 (provide 'org-aws-iam-role)
 ;;; org-aws-iam-role.el ends here
