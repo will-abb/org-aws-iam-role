@@ -48,10 +48,10 @@
 (require 'json)
 (require 'org-aws-iam-role)
 
-(defvar-local org-aws-iam-role--last-simulate-result nil
+(defvar-local org-aws-iam-role-simulate--last-result nil
   "Hold the raw JSON string from the last IAM simulate-principal-policy run.")
 
-(defvar-local org-aws-iam-role--last-simulate-role nil
+(defvar-local org-aws-iam-role-simulate--last-role nil
   "Hold the last IAM Role ARN used for simulate-principal-policy.")
 
 (defun org-aws-iam-role-simulate-from-buffer ()
@@ -72,17 +72,17 @@
                          (org-aws-iam-role-arn
                           (org-aws-iam-role-construct
                            (org-aws-iam-role-get-full role-name)))))))
-    (setq org-aws-iam-role--last-simulate-role role-arn)
-    (org-aws-iam-role-simulate-policy-for-arn role-arn)))
+    (setq org-aws-iam-role-simulate--last-role role-arn)
+    (org-aws-iam-role-simulate--for-arn role-arn)))
 
-(defun org-aws-iam-role-rerun-simulation ()
+(defun org-aws-iam-role-simulate-rerun ()
   "Run a simulation using the last stored ROLE-ARN."
   (interactive)
-  (if org-aws-iam-role--last-simulate-role
-      (org-aws-iam-role-simulate org-aws-iam-role--last-simulate-role)
+  (if org-aws-iam-role-simulate--last-role
+      (org-aws-iam-role-simulate org-aws-iam-role-simulate--last-role)
     (org-aws-iam-role-simulate)))
 
-(defun org-aws-iam-role-simulate-policy-for-arn (role-arn)
+(defun org-aws-iam-role-simulate--for-arn (role-arn)
   "Simulate the policy for ROLE-ARN after prompting for actions and resources."
   (let* ((actions-str (read-string "Action(s) to test (e.g., s3:ListObjects s3:Put*): "))
          (resources-str (read-string "Resource ARN(s) (e.g., arn:aws:s3:::my-bucket/*): "))
@@ -107,15 +107,14 @@
            (buf (get-buffer-create
                  (format "*IAM Simulation: %s <%s>*" role-name timestamp))))
       (with-current-buffer buf
-        (setq-local org-aws-iam-role--last-simulate-role role-arn)
-        (setq-local org-aws-iam-role--last-simulate-result json))
-      (org-aws-iam-role-show-simulation-result results))))
+        (setq-local org-aws-iam-role-simulate--last-role role-arn)
+        (setq-local org-aws-iam-role-simulate--last-result json))
+      (org-aws-iam-role-simulate--show-result results))))
 
-(defun org-aws-iam-role-show-simulation-result (results-list &optional raw-json)
-  "Display RESULTS-LIST from a policy simulation in a new buffer.
-Optional argument RAW-JSON is unused and reserved for future extensions."
-  (let* ((role-name (if org-aws-iam-role--last-simulate-role
-                        (car (last (split-string org-aws-iam-role--last-simulate-role "/")))
+(defun org-aws-iam-role-simulate--show-result (results-list)
+  "Display RESULTS-LIST from a policy simulation in a new buffer."
+  (let* ((role-name (if org-aws-iam-role-simulate--last-role
+                        (car (last (split-string org-aws-iam-role-simulate--last-role "/")))
                       "unknown-role"))
          (timestamp (format-time-string "%Y%m%d-%H%M%S"))
          (buf-name (format "*IAM Simulation: %s <%s>*" role-name timestamp))
@@ -133,32 +132,32 @@ Optional argument RAW-JSON is unused and reserved for future extensions."
        'follow-link t
        'face 'link)
       (insert "\n\n")
-      (org-aws-iam-role-insert-simulation-warning)
+      (org-aws-iam-role-simulate--insert-warning)
       (unless results-list
         (insert (propertize "No simulation results returned. Check the AWS CLI command for errors"
                             'face 'error))
         (pop-to-buffer buf)
-        (cl-return-from org-aws-iam-role-show-simulation-result))
+        (cl-return-from org-aws-iam-role-simulate--show-result))
       (dolist (result-item results-list)
-        (org-aws-iam-role-insert-one-simulation-result result-item))
+        (org-aws-iam-role-simulate--insert-one-result result-item))
       (goto-char (point-min))
       (use-local-map (copy-keymap special-mode-map))
-      (local-set-key (kbd "C-c C-j") #'org-aws-iam-role-show-raw-json)
-      (local-set-key (kbd "C-c C-c") #'org-aws-iam-role-rerun-simulation)
+      (local-set-key (kbd "C-c C-j") #'org-aws-iam-role-simulate-show-raw-json)
+      (local-set-key (kbd "C-c C-c") #'org-aws-iam-role-simulate-rerun)
       (pop-to-buffer buf))))
 
-(defun org-aws-iam-role-show-raw-json ()
+(defun org-aws-iam-role-simulate-show-raw-json ()
   "Show the raw JSON from the last IAM simulation."
   (interactive)
   (let* ((sim-buf (cl-find-if
                    (lambda (b)
                      (with-current-buffer b
-                       (bound-and-true-p org-aws-iam-role--last-simulate-result)))
+                       (bound-and-true-p org-aws-iam-role-simulate--last-result)))
                    (buffer-list)))
          (json (and sim-buf
-                    (buffer-local-value 'org-aws-iam-role--last-simulate-result sim-buf)))
+                    (buffer-local-value 'org-aws-iam-role-simulate--last-result sim-buf)))
          (role-arn (and sim-buf
-                        (buffer-local-value 'org-aws-iam-role--last-simulate-role sim-buf))))
+                        (buffer-local-value 'org-aws-iam-role-simulate--last-role sim-buf))))
     (if (not (and json (stringp json) (not (string-empty-p json))))
         (user-error "No JSON stored from last simulation")
       (let* ((role-name (if role-arn
@@ -178,12 +177,12 @@ Optional argument RAW-JSON is unused and reserved for future extensions."
             (json-mode)))
         (pop-to-buffer buf)))))
 
-(defun org-aws-iam-role-insert-one-simulation-result (result-item)
+(defun org-aws-iam-role-simulate--insert-one-result (result-item)
   "Insert the formatted details for a single simulation RESULT-ITEM."
-  (let ((parsed-result (org-aws-iam-role-parse-simulation-result-item result-item)))
-    (org-aws-iam-role-insert-parsed-simulation-result parsed-result)))
+  (let ((parsed-result (org-aws-iam-role-simulate--parse-result-item result-item)))
+    (org-aws-iam-role-simulate--insert-parsed-result parsed-result)))
 
-(defun org-aws-iam-role-insert-parsed-simulation-result (parsed-result)
+(defun org-aws-iam-role-simulate--insert-parsed-result (parsed-result)
   "Insert a PARSED-RESULT plist into the current buffer."
   (insert (propertize "====================================\n" 'face 'shadow))
   (insert (propertize "Action: " 'face 'font-lock-keyword-face))
@@ -211,7 +210,7 @@ Optional argument RAW-JSON is unused and reserved for future extensions."
   (insert (propertize (plist-get parsed-result :missing-context-str) 'face 'shadow))
   (insert "\n\n"))
 
-(defun org-aws-iam-role-parse-simulation-result-item (result-item)
+(defun org-aws-iam-role-simulate--parse-result-item (result-item)
   "Parse RESULT-ITEM from simulation into a plist for display."
   (let* ((decision (alist-get 'EvalDecision result-item))
          (pb-detail (alist-get 'PermissionsBoundaryDecisionDetail result-item))
@@ -230,7 +229,7 @@ Optional argument RAW-JSON is unused and reserved for future extensions."
       :missing-context-str ,(if missing-context (mapconcat 'identity missing-context ", ") "None")
       :decision-face ,(if (string= decision "allowed") 'success 'error))))
 
-(defun org-aws-iam-role-insert-simulation-warning ()
+(defun org-aws-iam-role-simulate--insert-warning ()
   "Insert the standard simulation warning into the current buffer."
   (let ((start (point)))
     (insert "*** WARNING: Simplified Simulation ***\n")
