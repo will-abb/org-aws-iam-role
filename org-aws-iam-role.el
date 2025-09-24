@@ -650,20 +650,24 @@ information."
       (org-aws-iam-role-simulate org-aws-iam-role-simulate--last-role)
     (org-aws-iam-role-simulate)))
 
+(defun org-aws-iam-role-simulate--build-cli-command (role-arn actions-str resources-str)
+  "Build the `simulate-principal-policy` command string."
+  (let ((action-args (mapconcat #'shell-quote-argument (split-string actions-str nil t " +") " "))
+        (resource-args (if (string-empty-p resources-str)
+                           ""
+                         (concat " --resource-arns "
+                                 (mapconcat #'shell-quote-argument (split-string resources-str nil t " +") " ")))))
+    (format "aws iam simulate-principal-policy --policy-source-arn %s --action-names %s%s --output json%s"
+            (shell-quote-argument role-arn)
+            action-args
+            resource-args
+            (org-aws-iam-role--cli-profile-arg))))
+
 (defun org-aws-iam-role-simulate--for-arn (role-arn)
   "Simulate the policy for ROLE-ARN after prompting for actions and resources."
   (let* ((actions-str (read-string "Action(s) to test (e.g., s3:ListObjects s3:Put*): "))
          (resources-str (read-string "Resource ARN(s) (e.g., arn:aws:s3:::my-bucket/*): "))
-         (action-args (mapconcat #'shell-quote-argument (split-string actions-str nil t " +") " "))
-         (resource-args (if (string-empty-p resources-str)
-                            ""
-                          (concat " --resource-arns "
-                                  (mapconcat #'shell-quote-argument (split-string resources-str nil t " +") " "))))
-         (cmd (format "aws iam simulate-principal-policy --policy-source-arn %s --action-names %s%s --output json%s"
-                      (shell-quote-argument role-arn)
-                      action-args
-                      resource-args
-                      (org-aws-iam-role--cli-profile-arg)))
+         (cmd (org-aws-iam-role-simulate--build-cli-command role-arn actions-str resources-str))
          (json (or (shell-command-to-string cmd) ""))
          (results (condition-case nil
                       (alist-get 'EvaluationResults
@@ -678,6 +682,36 @@ information."
         (setq-local org-aws-iam-role-simulate--last-result json))
       (org-aws-iam-role-simulate--show-result results))))
 
+(defun org-aws-iam-role-simulate--insert-header ()
+  "Insert header text and button into the simulation buffer."
+  (insert (propertize "Press C-c C-j to view raw JSON output\n" 'face 'font-lock-comment-face))
+  (insert (propertize "Press C-c C-c to rerun the simulation for the last role\n\n" 'face 'font-lock-comment-face))
+  (insert (propertize "Full list of AWS actions: " 'face 'font-lock-comment-face))
+  (insert-button
+   "Service Authorization Reference"
+   'action (lambda (_)
+             (browse-url
+              "https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html"))
+   'follow-link t
+   'face 'link)
+  (insert "\n\n"))
+
+(defun org-aws-iam-role-simulate--insert-results (results-list)
+  "Insert formatted simulation RESULTS-LIST into the buffer."
+  (unless results-list
+    (insert (propertize "No simulation results returned. Check the AWS CLI command for errors"
+                        'face 'error))
+    (cl-return-from org-aws-iam-role-simulate--insert-results))
+  (dolist (result-item results-list)
+    (org-aws-iam-role-simulate--insert-one-result result-item)))
+
+(defun org-aws-iam-role-simulate--setup-buffer ()
+  "Set up local keymap and other buffer-local settings."
+  (goto-char (point-min))
+  (use-local-map (copy-keymap special-mode-map))
+  (local-set-key (kbd "C-c C-j") #'org-aws-iam-role-simulate-show-raw-json)
+  (local-set-key (kbd "C-c C-c") #'org-aws-iam-role-simulate-rerun))
+
 (defun org-aws-iam-role-simulate--show-result (results-list)
   "Display RESULTS-LIST from a policy simulation in a new buffer."
   (let* ((role-name (if org-aws-iam-role-simulate--last-role
@@ -688,29 +722,10 @@ information."
          (buf (get-buffer-create buf-name)))
     (with-current-buffer buf
       (erase-buffer)
-      (insert (propertize "Press C-c C-j to view raw JSON output\n" 'face 'font-lock-comment-face))
-      (insert (propertize "Press C-c C-c to rerun the simulation for the last role\n\n" 'face 'font-lock-comment-face))
-      (insert (propertize "Full list of AWS actions: " 'face 'font-lock-comment-face))
-      (insert-button
-       "Service Authorization Reference"
-       'action (lambda (_)
-                 (browse-url
-                  "https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html"))
-       'follow-link t
-       'face 'link)
-      (insert "\n\n")
+      (org-aws-iam-role-simulate--insert-header)
       (org-aws-iam-role-simulate--insert-warning)
-      (unless results-list
-        (insert (propertize "No simulation results returned. Check the AWS CLI command for errors"
-                            'face 'error))
-        (pop-to-buffer buf)
-        (cl-return-from org-aws-iam-role-simulate--show-result))
-      (dolist (result-item results-list)
-        (org-aws-iam-role-simulate--insert-one-result result-item))
-      (goto-char (point-min))
-      (use-local-map (copy-keymap special-mode-map))
-      (local-set-key (kbd "C-c C-j") #'org-aws-iam-role-simulate-show-raw-json)
-      (local-set-key (kbd "C-c C-c") #'org-aws-iam-role-simulate-rerun)
+      (org-aws-iam-role-simulate--insert-results results-list)
+      (org-aws-iam-role-simulate--setup-buffer)
       (pop-to-buffer buf))))
 
 (defun org-aws-iam-role-simulate-show-raw-json ()
@@ -756,24 +771,24 @@ information."
   (insert (propertize (plist-get parsed-result :action) 'face 'font-lock-function-name-face))
   (insert "\n")
   (insert (propertize "------------------------------------\n" 'face 'shadow))
-  (insert (propertize "Decision:           " 'face 'font-lock-keyword-face))
+  (insert (propertize "Decision:     " 'face 'font-lock-keyword-face))
   (insert (propertize (plist-get parsed-result :decision) 'face (plist-get parsed-result :decision-face)))
   (insert "\n")
-  (insert (propertize "Resource:           " 'face 'font-lock-keyword-face))
+  (insert (propertize "Resource:     " 'face 'font-lock-keyword-face))
   (insert (propertize (plist-get parsed-result :resource) 'face 'shadow))
   (insert "\n")
   (insert (propertize "Boundary Allowed: " 'face 'font-lock-keyword-face))
   (let ((pb (plist-get parsed-result :pb-allowed)))
     (insert (propertize (if pb "true" "false") 'face (if pb 'success 'error))))
   (insert "\n")
-  (insert (propertize "Org Allowed:      " 'face 'font-lock-keyword-face))
+  (insert (propertize "Org Allowed:   " 'face 'font-lock-keyword-face))
   (let ((org (plist-get parsed-result :org-allowed)))
     (insert (propertize (if org "true" "false") 'face (if org 'success 'error))))
   (insert "\n")
   (insert (propertize "Matched Policies: " 'face 'font-lock-keyword-face))
   (insert (propertize (plist-get parsed-result :policy-ids-str) 'face 'shadow))
   (insert "\n")
-  (insert (propertize "Missing Context:  " 'face 'font-lock-keyword-face))
+  (insert (propertize "Missing Context: " 'face 'font-lock-keyword-face))
   (insert (propertize (plist-get parsed-result :missing-context-str) 'face 'shadow))
   (insert "\n\n"))
 
@@ -820,7 +835,7 @@ POLICY-DOCUMENT is the trust policy JSON string."
 
 (defun org-aws-iam-role--babel-cmd-for-inline-policy (role-name policy-name policy-document)
   "Return the AWS CLI command to update an inline policy.
-ROLE-NAME is the IAM role name.  POLICY-NAME is the inline policy name.
+ROLE-NAME is the IAM role name. POLICY-NAME is the inline policy name.
 POLICY-DOCUMENT is the policy JSON string."
   (format "aws iam put-role-policy --role-name %s --policy-name %s --policy-document %s%s"
           (shell-quote-argument role-name)
@@ -857,7 +872,7 @@ POLICY-DOCUMENT is the policy JSON string."
 
 (defun org-aws-iam-role--babel-cmd-delete-inline-policy (role-name policy-name)
   "Return the AWS CLI command to delete an inline policy.
-ROLE-NAME is the IAM role name.  POLICY-NAME is the inline policy name."
+ROLE-NAME is the IAM role name. POLICY-NAME is the inline policy name."
   (format "aws iam delete-role-policy --role-name %s --policy-name %s%s"
           (shell-quote-argument role-name)
           (shell-quote-argument policy-name)
@@ -865,7 +880,7 @@ ROLE-NAME is the IAM role name.  POLICY-NAME is the inline policy name."
 
 (defun org-aws-iam-role--babel-cmd-detach-managed-policy (role-name policy-arn)
   "Return the AWS CLI command to detach a managed policy.
-ROLE-NAME is the IAM role name.  POLICY-ARN is the ARN of the managed policy."
+ROLE-NAME is the IAM role name. POLICY-ARN is the ARN of the managed policy."
   (format "aws iam detach-role-policy --role-name %s --policy-arn %s%s"
           (shell-quote-argument role-name)
           (shell-quote-argument policy-arn)
@@ -877,6 +892,65 @@ POLICY-ARN is the ARN of the managed policy."
   (format "aws iam delete-policy --policy-arn %s%s"
           (shell-quote-argument policy-arn)
           (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--babel-confirm-and-run (cmd description)
+  "Prompt user with DESCRIPTION and execute CMD if confirmed."
+  (if (y-or-n-p (format "%s?" description))
+      (progn
+        (message "Executing: %s" description)
+        (let ((result (string-trim (shell-command-to-string cmd))))
+          (if (string-empty-p result)
+              "Success!"
+            result)))
+    (user-error "Aborted by user")))
+
+(defun org-aws-iam-role--babel-handle-delete (role-name policy-name policy-arn policy-type)
+  "Handle the :delete action for `aws-iam' babel blocks."
+  (let (cmd action-desc)
+    (cond
+     ((eq policy-type 'inline)
+      (setq action-desc (format "Permanently delete inline policy '%s' from role '%s'" policy-name role-name))
+      (setq cmd (org-aws-iam-role--babel-cmd-delete-inline-policy role-name policy-name)))
+     ((eq policy-type 'customer-managed)
+      (setq action-desc (format "Permanently delete managed policy '%s'? (This will fail if it's still attached to any entity)" policy-arn))
+      (setq cmd (org-aws-iam-role--babel-cmd-delete-policy policy-arn)))
+     (t (user-error "Deletion is only supported for 'inline' and 'customer-managed' policies")))
+    (org-aws-iam-role--babel-confirm-and-run cmd action-desc)))
+
+(defun org-aws-iam-role--babel-handle-detach (role-name policy-name policy-arn policy-type)
+  "Handle the :detach action for `aws-iam' babel blocks."
+  (when (eq policy-type 'inline)
+    (user-error "Cannot detach an 'inline' policy. Use :delete instead"))
+  (let ((action-desc (format "Detach policy '%s' from role '%s'" (or policy-name policy-arn) role-name))
+        (cmd (org-aws-iam-role--babel-cmd-detach-managed-policy role-name policy-arn)))
+    (org-aws-iam-role--babel-confirm-and-run cmd action-desc)))
+
+(defun org-aws-iam-role--babel-handle-create (policy-name policy-type body)
+  "Handle the :create action for `aws-iam' babel blocks."
+  (if (eq policy-type 'customer-managed)
+      (let* ((json-string (json-encode (json-read-from-string body)))
+             (action-desc (format "Create new customer managed policy '%s'" policy-name))
+             (cmd (org-aws-iam-role--babel-cmd-create-policy policy-name json-string)))
+        (org-aws-iam-role--babel-confirm-and-run cmd action-desc))
+    (user-error "The :CREATE flag is only for 'customer-managed' policies. For inline policies, execute without it")))
+
+(defun org-aws-iam-role--babel-handle-update (role-name policy-name policy-arn policy-type body)
+  "Handle the default update action for `aws-iam' babel blocks."
+  (let* ((json-string (json-encode (json-read-from-string body)))
+         (action-desc (format "Update %s for role '%s'"
+                              (if (eq policy-type 'trust-policy) "Trust Policy" (format "policy '%s'" policy-name))
+                              role-name))
+         (cmd (cond
+               ((eq policy-type 'trust-policy)
+                (org-aws-iam-role--babel-cmd-for-trust-policy role-name json-string))
+               ((eq policy-type 'inline)
+                (org-aws-iam-role--babel-cmd-for-inline-policy role-name policy-name json-string))
+               ((or (eq policy-type 'customer-managed)
+                    (eq policy-type 'aws-managed)
+                    (eq policy-type 'permissions-boundary))
+                (org-aws-iam-role--babel-cmd-for-managed-policy policy-arn json-string))
+               (t (user-error "Unsupported policy type for modification: %s" policy-type)))))
+    (org-aws-iam-role--babel-confirm-and-run cmd action-desc)))
 
 (defun org-babel-execute:aws-iam (body params)
   "Execute an `aws-iam' source block.
@@ -893,65 +967,16 @@ PARAMS should include header arguments such as :ROLE-NAME, :POLICY-NAME,
          (policy-type (when policy-type-str (intern policy-type-str)))
          (create-p (org-aws-iam-role--param-true-p (cdr (assoc :create params))))
          (delete-p (org-aws-iam-role--param-true-p (cdr (assoc :delete params))))
-         (detach-p (org-aws-iam-role--param-true-p (cdr (assoc :detach params))))
-         cmd action-desc)
+         (detach-p (org-aws-iam-role--param-true-p (cdr (assoc :detach params)))))
 
     (unless (and (or role-name create-p) policy-type)
       (user-error "Missing required header arguments: :ROLE-NAME or :POLICY-TYPE"))
 
     (cond
-     ;; --- DELETE ACTION ---
-     (delete-p
-      (cond
-       ((eq policy-type 'inline)
-        (setq action-desc (format "Permanently delete inline policy '%s' from role '%s'" policy-name role-name))
-        (setq cmd (org-aws-iam-role--babel-cmd-delete-inline-policy role-name policy-name)))
-       ((eq policy-type 'customer-managed)
-        (setq action-desc (format "Permanently delete managed policy '%s'? (This will fail if it's still attached to any entity)" policy-arn))
-        (setq cmd (org-aws-iam-role--babel-cmd-delete-policy policy-arn)))
-       (t (user-error "Deletion is only supported for 'inline' and 'customer-managed' policies"))))
-
-     ;; --- DETACH ACTION ---
-     (detach-p
-      (when (eq policy-type 'inline)
-        (user-error "Cannot detach an 'inline' policy. Use :delete instead"))
-      (setq action-desc (format "Detach policy '%s' from role '%s'" (or policy-name policy-arn) role-name))
-      (setq cmd (org-aws-iam-role--babel-cmd-detach-managed-policy role-name policy-arn)))
-
-     ;; --- CREATE ACTION ---
-     (create-p
-      (if (eq policy-type 'customer-managed)
-          (let ((json-string (json-encode (json-read-from-string body))))
-            (setq action-desc (format "Create new customer managed policy '%s'" policy-name))
-            (setq cmd (org-aws-iam-role--babel-cmd-create-policy policy-name json-string)))
-        (user-error "The :CREATE flag is only for 'customer-managed' policies. For inline policies, execute without it")))
-
-     ;; --- DEFAULT: UPDATE/CREATE INLINE ACTION ---
-     (t
-      (let ((json-string (json-encode (json-read-from-string body))))
-        (setq action-desc (format "Update %s for role '%s'"
-                                  (if (eq policy-type 'trust-policy) "Trust Policy" (format "policy '%s'" policy-name))
-                                  role-name))
-        (setq cmd
-              (cond
-               ((eq policy-type 'trust-policy)
-                (org-aws-iam-role--babel-cmd-for-trust-policy role-name json-string))
-               ((eq policy-type 'inline)
-                (org-aws-iam-role--babel-cmd-for-inline-policy role-name policy-name json-string))
-               ((or (eq policy-type 'customer-managed)
-                    (eq policy-type 'aws-managed)
-                    (eq policy-type 'permissions-boundary))
-                (org-aws-iam-role--babel-cmd-for-managed-policy policy-arn json-string))
-               (t (user-error "Unsupported policy type for modification: %s" policy-type)))))))
-
-    (if (y-or-n-p (format "%s?" action-desc))
-        (progn
-          (message "Executing: %s" action-desc)
-          (let ((result (string-trim (shell-command-to-string cmd))))
-            (if (string-empty-p result)
-                "Success!"
-              result)))
-      (user-error "Aborted by user"))))
+     (delete-p (org-aws-iam-role--babel-handle-delete role-name policy-name policy-arn policy-type))
+     (detach-p (org-aws-iam-role--babel-handle-detach role-name policy-name policy-arn policy-type))
+     (create-p (org-aws-iam-role--babel-handle-create policy-name policy-type body))
+     (t (org-aws-iam-role--babel-handle-update role-name policy-name policy-arn policy-type body)))))
 
 (provide 'org-aws-iam-role)
 ;;; org-aws-iam-role.el ends here
