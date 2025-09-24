@@ -80,7 +80,12 @@
 
 (defun org-aws-iam-role-show-simulation-result (results-list &optional raw-json)
   "Display the detailed results of a policy simulation in a new buffer."
-  (let ((buf (get-buffer-create "*IAM Simulation Result*")))
+  (let* ((role-name (if org-aws-iam-role--last-simulate-role
+                        (car (last (split-string org-aws-iam-role--last-simulate-role "/")))
+                      "unknown-role"))
+         (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+         (buf-name (format "*IAM Simulation: %s <%s>*" role-name timestamp))
+         (buf (get-buffer-create buf-name)))
     (with-current-buffer buf
       (erase-buffer)
       (insert (propertize "Press C-c C-j to view raw JSON output\n" 'face 'font-lock-comment-face))
@@ -115,7 +120,12 @@
                 (stringp org-aws-iam-role--last-simulate-result)
                 (not (string-empty-p org-aws-iam-role--last-simulate-result))))
       (user-error "No JSON stored from last simulation")
-    (let ((buf (get-buffer-create "*IAM Simulate Result JSON*")))
+    (let* ((role-name (if org-aws-iam-role--last-simulate-role
+                          (car (last (split-string org-aws-iam-role--last-simulate-role "/")))
+                        "unknown-role"))
+           (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+           (buf-name (format "*IAM Simulate JSON: %s <%s>*" role-name timestamp))
+           (buf (get-buffer-create buf-name)))
       (with-current-buffer buf
         (erase-buffer)
         (insert org-aws-iam-role--last-simulate-result)
