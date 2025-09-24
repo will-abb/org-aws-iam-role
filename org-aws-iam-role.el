@@ -727,19 +727,12 @@ information."
       (pop-to-buffer buf))))
 
 (defun org-aws-iam-role-simulate-show-raw-json ()
-  "Show the raw JSON from the last IAM simulation."
+  "Show the raw JSON from the last IAM simulation in the current buffer."
   (interactive)
-  (let* ((sim-buf (cl-find-if
-                   (lambda (b)
-                     (with-current-buffer b
-                       (bound-and-true-p org-aws-iam-role-simulate--last-result)))
-                   (buffer-list)))
-         (json (and sim-buf
-                    (buffer-local-value 'org-aws-iam-role-simulate--last-result sim-buf)))
-         (role-arn (and sim-buf
-                        (buffer-local-value 'org-aws-iam-role-simulate--last-role sim-buf))))
+  (let* ((json org-aws-iam-role-simulate--last-result)
+         (role-arn org-aws-iam-role-simulate--last-role))
     (if (not (and json (stringp json) (not (string-empty-p json))))
-        (user-error "No JSON stored from last simulation")
+        (user-error "No JSON stored from the last simulation in this buffer")
       (let* ((role-name (if role-arn
                             (car (last (split-string role-arn "/")))
                           "unknown-role"))
