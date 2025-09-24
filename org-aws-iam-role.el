@@ -1,19 +1,17 @@
-;;; org-aws-iam-role.el --- Browse and modify AWS IAM Roles in Org Babel -*- lexical-binding: t; -*-
+;;; org-aws-iam-role.el --- Browse, modify, and simulate AWS IAM Roles in Org Babel -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025 William Bosch-Bello
 
 ;; Author: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Maintainer: William Bosch-Bello <williamsbosch@gmail.com>
 ;; Created: August 16, 2025
-;; Version: 1.2.0
-;; Package-Version: 1.2.0
+;; Version: 1.2.1
+;; Package-Version: 1.2.1
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: aws, iam, org, babel, tools
 ;; URL: https://github.com/will-abb/org-aws-iam-role
 ;; Homepage: https://github.com/will-abb/org-aws-iam-role
 ;; SPDX-License-Identifier: GPL-3.0-or-later
-
-;; This file is part of org-aws-iam-role.
 
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
