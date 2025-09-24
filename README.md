@@ -1,6 +1,6 @@
 # Org AWS IAM Role for Emacs
 
-`org-aws-iam-role.el` is an Emacs package for inspecting **and modifying** AWS IAM roles and their policy documents. It renders all role data—including trust policies, permissions boundaries, and all associated policies (AWS managed, customer managed, and inline)—in an interactive Org-mode buffer.
+`org-aws-iam-role.el` is an Emacs package for inspecting **and modifying** AWS IAM roles and their policy documents. It renders all role data—including trust policies, permissions boundaries, and all associated policies (AWS managed, customer managed, and inline)—in an interactive Org-mode buffer. It also includes a powerful IAM policy simulator to test a role's permissions against specific actions and resources directly within Emacs.
 
 This package uses Org Babel and the AWS CLI under the hood, allowing you to edit policies directly in the buffer and apply them to your AWS account. All initial policy data is fetched **asynchronously and in parallel**.
 
@@ -11,6 +11,7 @@ This package uses Org Babel and the AWS CLI under the hood, allowing you to edit
   * **Browse and Inspect IAM Roles** via an interactive prompt.
   * **Modify IAM Policies**: Edit policies directly in the Org buffer and apply changes by executing the source block (`C-c C-c`).
       * Supports Trust Policies, Permissions Boundaries, Customer-Managed, AWS-Managed, and Inline policies.
+  * **IAM Policy Simulator**: Test the role's permissions against a list of actions and resources using `iam:SimulatePrincipalPolicy` (`C-c C-s`).
   * **Read-Only by Default**: Buffers open in a safe, read-only mode to prevent accidental changes. Toggle editing with a keypress.
   * **Org Babel Integration** using a custom `aws-iam` language for applying changes.
   * **Asynchronous Parallel Fetching** for fast initial loading of all policies.
@@ -22,7 +23,7 @@ This package uses Org Babel and the AWS CLI under the hood, allowing you to edit
 
 ## Requirements
 
-  * GNU Emacs 27+
+  * **GNU Emacs 29.1+**
   * AWS CLI installed and in your `PATH`
   * Permissions for the following AWS IAM APIs:
       * `sts:GetCallerIdentity`
@@ -36,6 +37,7 @@ This package uses Org Babel and the AWS CLI under the hood, allowing you to edit
       * `iam:UpdateAssumeRolePolicy` (to modify trust policies)
       * `iam:PutRolePolicy` (to modify inline policies)
       * `iam:CreatePolicyVersion` (to modify managed policies)
+      * `iam:SimulatePrincipalPolicy` (for the policy simulator)
 
 Emacs libraries used: `cl-lib`, `json`, `url-util`, `async`, `promise`, `ob-shell`.
 
@@ -52,15 +54,17 @@ Emacs libraries used: `cl-lib`, `json`, `url-util`, `async`, `promise`, `ob-shel
     b.  Modify the JSON inside any policy's source block.
     c.  Press `C-c C-c` inside the block to apply the changes to AWS.
     d.  View the success or failure message in the `#+RESULTS:` block that appears.
+5.  To test the role's effective permissions, press `C-c C-s` at any time to open the IAM policy simulator.
 
 ### Org Buffer Keybindings
 
 | Keybinding | Description |
 | :--- | :--- |
 | `C-c C-e` | Toggle read-only mode to allow/prevent edits. |
+| `C-c C-s` | Simulate the role's policies against specific actions. |
 | `C-c C-c` | Inside a source block, apply changes to AWS. |
-| `C-c C-h` | Hide all property drawers. |
-| `C-c C-r` | Reveal all property drawers. |
+| `C-c (` | Hide all property drawers. |
+| `C-c )` | Reveal all property drawers. |
 
 -----
 
