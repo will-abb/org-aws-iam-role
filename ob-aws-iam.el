@@ -10,18 +10,28 @@
 ;; This file is part of the org-aws-iam-role package.
 ;; For version and dependency information, see org-aws-iam-role.el.
 
+;;; Commentary:
+;;
+;; This library provides the Org Babel execution logic for the `aws-iam`
+;; language, used by `org-aws-iam-role.el` to manage AWS IAM policies.
+
+;;; Code:
+
 (require 'json)
 (require 'org-aws-iam-role)
 
 (defun org-aws-iam-role--babel-cmd-for-trust-policy (role-name policy-document)
-  "Return the AWS CLI command for updating a trust policy for ROLE-NAME."
+  "Return the AWS CLI command to update a trust policy for ROLE-NAME.
+POLICY-DOCUMENT is the trust policy JSON string."
   (format "aws iam update-assume-role-policy --role-name %s --policy-document %s%s"
           (shell-quote-argument role-name)
           (shell-quote-argument policy-document)
           (org-aws-iam-role--cli-profile-arg)))
 
 (defun org-aws-iam-role--babel-cmd-for-inline-policy (role-name policy-name policy-document)
-  "Return the AWS CLI command for updating an inline policy."
+  "Return the AWS CLI command to update an inline policy.
+ROLE-NAME is the IAM role name.  POLICY-NAME is the inline policy name.
+POLICY-DOCUMENT is the policy JSON string."
   (format "aws iam put-role-policy --role-name %s --policy-name %s --policy-document %s%s"
           (shell-quote-argument role-name)
           (shell-quote-argument policy-name)
@@ -29,7 +39,9 @@
           (org-aws-iam-role--cli-profile-arg)))
 
 (defun org-aws-iam-role--babel-cmd-for-managed-policy (policy-arn policy-document)
-  "Return the AWS CLI command for updating a managed policy."
+  "Return the AWS CLI command to update a managed policy.
+POLICY-ARN is the ARN of the managed policy.
+POLICY-DOCUMENT is the policy JSON string."
   (unless policy-arn
     (user-error "Missing required header argument for managed policy: :arn"))
   (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
@@ -38,41 +50,49 @@
           (org-aws-iam-role--cli-profile-arg)))
 
 (defun org-aws-iam-role--param-true-p (val)
-  "Return t if VAL is `t' or the string \"true\" or \"t\", case-insensitively."
+  "Return non-nil if VAL is t, or the string \"true\" or \"t\" (case-insensitive)."
   (when val
     (let ((val-str (downcase (format "%s" val))))
       (or (equal val-str "t")
           (equal val-str "true")))))
 
 (defun org-aws-iam-role--babel-cmd-create-policy (policy-name policy-document)
-  "Return AWS CLI command for creating a customer-managed policy."
+  "Return the AWS CLI command to create a customer-managed policy.
+POLICY-NAME is the name of the new policy.
+POLICY-DOCUMENT is the policy JSON string."
   (format "aws iam create-policy --policy-name %s --policy-document %s%s"
           (shell-quote-argument policy-name)
           (shell-quote-argument policy-document)
           (org-aws-iam-role--cli-profile-arg)))
 
 (defun org-aws-iam-role--babel-cmd-delete-inline-policy (role-name policy-name)
-  "Return AWS CLI command for deleting an inline policy."
+  "Return the AWS CLI command to delete an inline policy.
+ROLE-NAME is the IAM role name.  POLICY-NAME is the inline policy name."
   (format "aws iam delete-role-policy --role-name %s --policy-name %s%s"
           (shell-quote-argument role-name)
           (shell-quote-argument policy-name)
           (org-aws-iam-role--cli-profile-arg)))
 
 (defun org-aws-iam-role--babel-cmd-detach-managed-policy (role-name policy-arn)
-  "Return AWS CLI command for detaching a managed policy."
+  "Return the AWS CLI command to detach a managed policy.
+ROLE-NAME is the IAM role name.  POLICY-ARN is the ARN of the managed policy."
   (format "aws iam detach-role-policy --role-name %s --policy-arn %s%s"
           (shell-quote-argument role-name)
           (shell-quote-argument policy-arn)
           (org-aws-iam-role--cli-profile-arg)))
 
 (defun org-aws-iam-role--babel-cmd-delete-policy (policy-arn)
-  "Return AWS CLI command for deleting a managed policy."
+  "Return the AWS CLI command to delete a managed policy.
+POLICY-ARN is the ARN of the managed policy."
   (format "aws iam delete-policy --policy-arn %s%s"
           (shell-quote-argument policy-arn)
           (org-aws-iam-role--cli-profile-arg)))
 
 (defun org-babel-execute:aws-iam (body params)
-  "Execute an aws-iam source block to manage an IAM policy in AWS."
+  "Execute an `aws-iam' source block.
+BODY with header PARAMS to manage IAM policies.
+PARAMS should include header arguments such as :ROLE-NAME, :POLICY-NAME,
+:ARN, and :POLICY-TYPE."
   (when buffer-read-only
     (user-error "Buffer is read-only. Press C-c C-e to enable edits and execution"))
 
@@ -87,7 +107,7 @@
          cmd action-desc)
 
     (unless (and (or role-name create-p) policy-type)
-      (user-error "Missing required header arguments: :role-name or :policy-type"))
+      (user-error "Missing required header arguments: :ROLE-NAME or :POLICY-TYPE"))
 
     (cond
      ;; --- DELETE ACTION ---
@@ -99,24 +119,24 @@
        ((eq policy-type 'customer-managed)
         (setq action-desc (format "Permanently delete managed policy '%s'? (This will fail if it's still attached to any entity)" policy-arn))
         (setq cmd (org-aws-iam-role--babel-cmd-delete-policy policy-arn)))
-       (t (user-error "Deletion is only supported for 'inline' and 'customer-managed' policies."))))
+       (t (user-error "Deletion is only supported for 'inline' and 'customer-managed' policies"))))
 
      ;; --- DETACH ACTION ---
      (detach-p
       (when (eq policy-type 'inline)
-        (user-error "Cannot detach an 'inline' policy. Use :delete instead."))
+        (user-error "Cannot detach an 'inline' policy. Use :delete instead"))
       (setq action-desc (format "Detach policy '%s' from role '%s'" (or policy-name policy-arn) role-name))
       (setq cmd (org-aws-iam-role--babel-cmd-detach-managed-policy role-name policy-arn)))
 
-     ;; --- CREATE ACTION (now only for customer-managed) ---
+     ;; --- CREATE ACTION ---
      (create-p
       (if (eq policy-type 'customer-managed)
           (let ((json-string (json-encode (json-read-from-string body))))
             (setq action-desc (format "Create new customer managed policy '%s'" policy-name))
             (setq cmd (org-aws-iam-role--babel-cmd-create-policy policy-name json-string)))
-        (user-error "The :create flag is only for 'customer-managed' policies. For inline policies, just execute the block without it.")))
+        (user-error "The :CREATE flag is only for 'customer-managed' policies. For inline policies, execute without it")))
 
-     ;; --- DEFAULT: UPDATE (or Create for Inline) ACTION ---
+     ;; --- DEFAULT: UPDATE/CREATE INLINE ACTION ---
      (t
       (let ((json-string (json-encode (json-read-from-string body))))
         (setq action-desc (format "Update %s for role '%s'"
@@ -134,15 +154,19 @@
                 (org-aws-iam-role--babel-cmd-for-managed-policy policy-arn json-string))
                (t (user-error "Unsupported policy type for modification: %s" policy-type)))))))
 
-    (if (y-or-n-p (format "%s" action-desc))
+    (if (y-or-n-p (format "%s?" action-desc))
         (progn
           (message "Executing: %s" action-desc)
           (let ((result (string-trim (shell-command-to-string cmd))))
             (if (string-empty-p result)
                 "Success!"
               result)))
-      (user-error "Aborted by user."))))
-
+      (user-error "Aborted by user"))))
 
 (provide 'ob-aws-iam)
 ;;; ob-aws-iam.el ends here
+
+
+
+
+
