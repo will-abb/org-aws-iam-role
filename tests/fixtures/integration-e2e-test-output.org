@@ -13,6 +13,7 @@ Use header arguments for other actions:
 
 ** Keybindings
 - =C-c C-e= :: Toggle read-only mode to allow/prevent edits.
+- =C-c C-s= :: Simulate the role's policies against specific actions.
 - =C-c C-c= :: Inside a source block, apply changes to AWS.
 - =C-c (= :: Hide all property drawers.
 - =C-c )= :: Reveal all property drawers.
@@ -490,9 +491,9 @@ Use header arguments for other actions:
 :Path: /
 :Description: Description, just a dummy perm boundary
 :Created: 2025-07-16T23:58:20+00:00
-:Updated: 2025-08-16T18:42:28+00:00
+:Updated: 2025-09-23T17:48:06+00:00
 :AttachmentCount: 0
-:DefaultVersion: v3
+:DefaultVersion: v5
 :END:
 #+BEGIN_SRC aws-iam :role-name "test-iam-packageIamRole" :policy-name "DevOpsPermBoundary" :policy-type "permissions-boundary" :arn "arn:aws:iam::005343251202:policy/DevOpsPermBoundary" :results output
 {
