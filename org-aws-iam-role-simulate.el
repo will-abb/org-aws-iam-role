@@ -14,10 +14,10 @@
 (require 'org-aws-iam-role)
 
 (defvar-local org-aws-iam-role--last-simulate-result nil
-  "Holds the raw JSON string from the last IAM simulate-principal-policy run.")
+  "Hold the raw JSON string from the last IAM simulate-principal-policy run.")
 
 (defvar-local org-aws-iam-role--last-simulate-role nil
-  "Holds the last IAM Role ARN used for simulate-principal-policy.")
+  "Hold the last IAM Role ARN used for simulate-principal-policy.")
 
 (defun org-aws-iam-role-simulate-from-buffer ()
   "Run a policy simulation using the ARN from the current role buffer."
@@ -26,7 +26,7 @@
     (goto-char (point-min))
     (if (re-search-forward "^:ARN:[ \t]+\\(arn:aws:iam::.*\\)$" nil t)
         (org-aws-iam-role-simulate (match-string 1))
-      (user-error "Could not find a valid Role ARN in this buffer."))))
+      (user-error "Could not find a valid Role ARN in this buffer"))))
 
 (defun org-aws-iam-role-simulate (&optional role-arn)
   "Run a policy simulation for ROLE-ARN."
@@ -48,7 +48,7 @@
     (org-aws-iam-role-simulate)))
 
 (defun org-aws-iam-role-simulate-policy-for-arn (role-arn)
-  "Given a ROLE-ARN, prompt for an action and simulate the policy."
+  "Simulate the policy for ROLE-ARN after prompting for actions and resources."
   (let* ((actions-str (read-string "Action(s) to test (e.g., s3:ListObjects s3:Put*): "))
          (resources-str (read-string "Resource ARN(s) (e.g., arn:aws:s3:::my-bucket/*): "))
          (action-args (mapconcat #'shell-quote-argument (split-string actions-str nil t " +") " "))
@@ -76,9 +76,9 @@
         (setq-local org-aws-iam-role--last-simulate-result json))
       (org-aws-iam-role-show-simulation-result results))))
 
-
 (defun org-aws-iam-role-show-simulation-result (results-list &optional raw-json)
-  "Display the detailed results of a policy simulation in a new buffer."
+  "Display the detailed RESULTS-LIST of a policy simulation in a new buffer.
+Optional argument RAW-JSON is unused and reserved for future extensions."
   (let* ((role-name (if org-aws-iam-role--last-simulate-role
                         (car (last (split-string org-aws-iam-role--last-simulate-role "/")))
                       "unknown-role"))
@@ -100,7 +100,7 @@
       (insert "\n\n")
       (org-aws-iam-role-insert-simulation-warning)
       (unless results-list
-        (insert (propertize "No simulation results returned. Check the AWS CLI command for errors."
+        (insert (propertize "No simulation results returned. Check the AWS CLI command for errors"
                             'face 'error))
         (pop-to-buffer buf)
         (cl-return-from org-aws-iam-role-show-simulation-result))
@@ -143,9 +143,8 @@
             (json-mode)))
         (pop-to-buffer buf)))))
 
-
 (defun org-aws-iam-role-insert-one-simulation-result (result-item)
-  "Parse and insert the formatted details for a single simulation RESULT-ITEM."
+  "Insert the formatted details for a single simulation RESULT-ITEM."
   (let ((parsed-result (org-aws-iam-role-parse-simulation-result-item result-item)))
     (org-aws-iam-role-insert-parsed-simulation-result parsed-result)))
 
@@ -178,7 +177,7 @@
   (insert "\n\n"))
 
 (defun org-aws-iam-role-parse-simulation-result-item (result-item)
-  "Parse a RESULT-ITEM from simulation into a plist for display."
+  "Parse RESULT-ITEM from simulation into a plist for display."
   (let* ((decision (alist-get 'EvalDecision result-item))
          (pb-detail (alist-get 'PermissionsBoundaryDecisionDetail result-item))
          (org-detail (alist-get 'OrganizationsDecisionDetail result-item))
