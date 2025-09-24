@@ -611,5 +611,346 @@ information."
          (buf (get-buffer-create buf-name)))
     (org-aws-iam-role-populate-role-buffer role buf)))
 
+;; simulation code start ;;
+(defvar-local org-aws-iam-role-simulate--last-result nil
+  "Hold the raw JSON string from the last IAM simulate-principal-policy run.")
+
+(defvar-local org-aws-iam-role-simulate--last-role nil
+  "Hold the last IAM Role ARN used for simulate-principal-policy.")
+
+(defun org-aws-iam-role-simulate-from-buffer ()
+  "Run a policy simulation using the ARN from the current role buffer."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (if (re-search-forward "^:ARN:[ \t]+\\(arn:aws:iam::.*\\)$" nil t)
+        (org-aws-iam-role-simulate (match-string 1))
+      (user-error "Could not find a valid Role ARN in this buffer"))))
+
+(defun org-aws-iam-role-simulate (&optional role-arn)
+  "Run a policy simulation for ROLE-ARN."
+  (interactive)
+  (let* ((role-arn (or role-arn
+                       (let* ((roles (org-aws-iam-role-list-names))
+                              (role-name (completing-read "IAM Role: " roles)))
+                         (org-aws-iam-role-arn
+                          (org-aws-iam-role-construct
+                           (org-aws-iam-role-get-full role-name)))))))
+    (setq org-aws-iam-role-simulate--last-role role-arn)
+    (org-aws-iam-role-simulate--for-arn role-arn)))
+
+(defun org-aws-iam-role-simulate-rerun ()
+  "Run a simulation using the last stored ROLE-ARN."
+  (interactive)
+  (if org-aws-iam-role-simulate--last-role
+      (org-aws-iam-role-simulate org-aws-iam-role-simulate--last-role)
+    (org-aws-iam-role-simulate)))
+
+(defun org-aws-iam-role-simulate--for-arn (role-arn)
+  "Simulate the policy for ROLE-ARN after prompting for actions and resources."
+  (let* ((actions-str (read-string "Action(s) to test (e.g., s3:ListObjects s3:Put*): "))
+         (resources-str (read-string "Resource ARN(s) (e.g., arn:aws:s3:::my-bucket/*): "))
+         (action-args (mapconcat #'shell-quote-argument (split-string actions-str nil t " +") " "))
+         (resource-args (if (string-empty-p resources-str)
+                            ""
+                          (concat " --resource-arns "
+                                  (mapconcat #'shell-quote-argument (split-string resources-str nil t " +") " "))))
+         (cmd (format "aws iam simulate-principal-policy --policy-source-arn %s --action-names %s%s --output json%s"
+                      (shell-quote-argument role-arn)
+                      action-args
+                      resource-args
+                      (org-aws-iam-role--cli-profile-arg)))
+         (json (or (shell-command-to-string cmd) ""))
+         (results (condition-case nil
+                      (alist-get 'EvaluationResults
+                                 (json-parse-string json :object-type 'alist :array-type 'list))
+                    (error nil))))
+    ;; Create result buffer and save locals there
+    (let* ((role-name (car (last (split-string role-arn "/"))))
+           (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+           (buf (get-buffer-create
+                 (format "*IAM Simulation: %s <%s>*" role-name timestamp))))
+      (with-current-buffer buf
+        (setq-local org-aws-iam-role-simulate--last-role role-arn)
+        (setq-local org-aws-iam-role-simulate--last-result json))
+      (org-aws-iam-role-simulate--show-result results))))
+
+(defun org-aws-iam-role-simulate--show-result (results-list)
+  "Display RESULTS-LIST from a policy simulation in a new buffer."
+  (let* ((role-name (if org-aws-iam-role-simulate--last-role
+                        (car (last (split-string org-aws-iam-role-simulate--last-role "/")))
+                      "unknown-role"))
+         (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+         (buf-name (format "*IAM Simulation: %s <%s>*" role-name timestamp))
+         (buf (get-buffer-create buf-name)))
+    (with-current-buffer buf
+      (erase-buffer)
+      (insert (propertize "Press C-c C-j to view raw JSON output\n" 'face 'font-lock-comment-face))
+      (insert (propertize "Press C-c C-c to rerun the simulation for the last role\n\n" 'face 'font-lock-comment-face))
+      (insert (propertize "Full list of AWS actions: " 'face 'font-lock-comment-face))
+      (insert-button
+       "Service Authorization Reference"
+       'action (lambda (_)
+                 (browse-url
+                  "https://docs.aws.amazon.com/service-authorization/latest/reference/reference_policies_actions-resources-contextkeys.html"))
+       'follow-link t
+       'face 'link)
+      (insert "\n\n")
+      (org-aws-iam-role-simulate--insert-warning)
+      (unless results-list
+        (insert (propertize "No simulation results returned. Check the AWS CLI command for errors"
+                            'face 'error))
+        (pop-to-buffer buf)
+        (cl-return-from org-aws-iam-role-simulate--show-result))
+      (dolist (result-item results-list)
+        (org-aws-iam-role-simulate--insert-one-result result-item))
+      (goto-char (point-min))
+      (use-local-map (copy-keymap special-mode-map))
+      (local-set-key (kbd "C-c C-j") #'org-aws-iam-role-simulate-show-raw-json)
+      (local-set-key (kbd "C-c C-c") #'org-aws-iam-role-simulate-rerun)
+      (pop-to-buffer buf))))
+
+(defun org-aws-iam-role-simulate-show-raw-json ()
+  "Show the raw JSON from the last IAM simulation."
+  (interactive)
+  (let* ((sim-buf (cl-find-if
+                   (lambda (b)
+                     (with-current-buffer b
+                       (bound-and-true-p org-aws-iam-role-simulate--last-result)))
+                   (buffer-list)))
+         (json (and sim-buf
+                    (buffer-local-value 'org-aws-iam-role-simulate--last-result sim-buf)))
+         (role-arn (and sim-buf
+                        (buffer-local-value 'org-aws-iam-role-simulate--last-role sim-buf))))
+    (if (not (and json (stringp json) (not (string-empty-p json))))
+        (user-error "No JSON stored from last simulation")
+      (let* ((role-name (if role-arn
+                            (car (last (split-string role-arn "/")))
+                          "unknown-role"))
+             (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+             (buf (get-buffer-create
+                   (format "*IAM Simulate JSON: %s <%s>*" role-name timestamp))))
+        (with-current-buffer buf
+          (erase-buffer)
+          (insert json)
+          (condition-case nil
+              (json-pretty-print-buffer)
+            (error (message "Warning: could not pretty-print JSON")))
+          (goto-char (point-min))
+          (when (fboundp 'json-mode)
+            (json-mode)))
+        (pop-to-buffer buf)))))
+
+(defun org-aws-iam-role-simulate--insert-one-result (result-item)
+  "Insert the formatted details for a single simulation RESULT-ITEM."
+  (let ((parsed-result (org-aws-iam-role-simulate--parse-result-item result-item)))
+    (org-aws-iam-role-simulate--insert-parsed-result parsed-result)))
+
+(defun org-aws-iam-role-simulate--insert-parsed-result (parsed-result)
+  "Insert a PARSED-RESULT plist into the current buffer."
+  (insert (propertize "====================================\n" 'face 'shadow))
+  (insert (propertize "Action: " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :action) 'face 'font-lock-function-name-face))
+  (insert "\n")
+  (insert (propertize "------------------------------------\n" 'face 'shadow))
+  (insert (propertize "Decision:           " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :decision) 'face (plist-get parsed-result :decision-face)))
+  (insert "\n")
+  (insert (propertize "Resource:           " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :resource) 'face 'shadow))
+  (insert "\n")
+  (insert (propertize "Boundary Allowed: " 'face 'font-lock-keyword-face))
+  (let ((pb (plist-get parsed-result :pb-allowed)))
+    (insert (propertize (if pb "true" "false") 'face (if pb 'success 'error))))
+  (insert "\n")
+  (insert (propertize "Org Allowed:      " 'face 'font-lock-keyword-face))
+  (let ((org (plist-get parsed-result :org-allowed)))
+    (insert (propertize (if org "true" "false") 'face (if org 'success 'error))))
+  (insert "\n")
+  (insert (propertize "Matched Policies: " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :policy-ids-str) 'face 'shadow))
+  (insert "\n")
+  (insert (propertize "Missing Context:  " 'face 'font-lock-keyword-face))
+  (insert (propertize (plist-get parsed-result :missing-context-str) 'face 'shadow))
+  (insert "\n\n"))
+
+(defun org-aws-iam-role-simulate--parse-result-item (result-item)
+  "Parse RESULT-ITEM from simulation into a plist for display."
+  (let* ((decision (alist-get 'EvalDecision result-item))
+         (pb-detail (alist-get 'PermissionsBoundaryDecisionDetail result-item))
+         (org-detail (alist-get 'OrganizationsDecisionDetail result-item))
+         (matched-statements (alist-get 'MatchedStatements result-item))
+         (policy-ids (if matched-statements
+                         (mapcar (lambda (stmt) (alist-get 'SourcePolicyId stmt)) matched-statements)
+                       '("None")))
+         (missing-context (alist-get 'MissingContextValues result-item)))
+    `(:action ,(alist-get 'EvalActionName result-item)
+      :decision ,decision
+      :resource ,(alist-get 'EvalResourceName result-item)
+      :pb-allowed ,(if pb-detail (alist-get 'AllowedByPermissionsBoundary pb-detail) nil)
+      :org-allowed ,(if org-detail (alist-get 'AllowedByOrganizations org-detail) nil)
+      :policy-ids-str ,(mapconcat #'identity policy-ids ", ")
+      :missing-context-str ,(if missing-context (mapconcat 'identity missing-context ", ") "None")
+      :decision-face ,(if (string= decision "allowed") #'success #'error))))
+
+(defun org-aws-iam-role-simulate--insert-warning ()
+  "Insert the standard simulation warning into the current buffer."
+  (let ((start (point)))
+    (insert "*** WARNING: Simplified Simulation ***\n")
+    (insert "This test only checks the role's identity-based policies against the given actions.\n")
+    (insert "- It does NOT include resource-based policies (e.g., S3 bucket policies).\n")
+    (insert "- It does NOT allow providing specific context keys (e.g., source IP, MFA).\n")
+    (insert "- Results ARE affected by Service Control Policies (SCPs).\n\n")
+    (insert "For comprehensive testing, use the AWS Console Policy Simulator.\n")
+    (insert "************************************\n\n")
+    (add-face-text-property start (point) 'font-lock-warning-face)))
+
+;; simulation code end ;;
+
+;;iam babel code start ;;
+(defun org-aws-iam-role--babel-cmd-for-trust-policy (role-name policy-document)
+  "Return the AWS CLI command to update a trust policy for ROLE-NAME.
+POLICY-DOCUMENT is the trust policy JSON string."
+  (format "aws iam update-assume-role-policy --role-name %s --policy-document %s%s"
+          (shell-quote-argument role-name)
+          (shell-quote-argument policy-document)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--babel-cmd-for-inline-policy (role-name policy-name policy-document)
+  "Return the AWS CLI command to update an inline policy.
+ROLE-NAME is the IAM role name.  POLICY-NAME is the inline policy name.
+POLICY-DOCUMENT is the policy JSON string."
+  (format "aws iam put-role-policy --role-name %s --policy-name %s --policy-document %s%s"
+          (shell-quote-argument role-name)
+          (shell-quote-argument policy-name)
+          (shell-quote-argument policy-document)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--babel-cmd-for-managed-policy (policy-arn policy-document)
+  "Return the AWS CLI command to update a managed policy.
+POLICY-ARN is the ARN of the managed policy.
+POLICY-DOCUMENT is the policy JSON string."
+  (unless policy-arn
+    (user-error "Missing required header argument for managed policy: :arn"))
+  (format "aws iam create-policy-version --policy-arn %s --policy-document %s --set-as-default%s"
+          (shell-quote-argument policy-arn)
+          (shell-quote-argument policy-document)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--param-true-p (val)
+  "Return non-nil if VAL is t, or the string \"true\" or \"t\" (case-insensitive)."
+  (when val
+    (let ((val-str (downcase (format "%s" val))))
+      (or (equal val-str "t")
+          (equal val-str "true")))))
+
+(defun org-aws-iam-role--babel-cmd-create-policy (policy-name policy-document)
+  "Return the AWS CLI command to create a customer-managed policy.
+POLICY-NAME is the name of the new policy.
+POLICY-DOCUMENT is the policy JSON string."
+  (format "aws iam create-policy --policy-name %s --policy-document %s%s"
+          (shell-quote-argument policy-name)
+          (shell-quote-argument policy-document)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--babel-cmd-delete-inline-policy (role-name policy-name)
+  "Return the AWS CLI command to delete an inline policy.
+ROLE-NAME is the IAM role name.  POLICY-NAME is the inline policy name."
+  (format "aws iam delete-role-policy --role-name %s --policy-name %s%s"
+          (shell-quote-argument role-name)
+          (shell-quote-argument policy-name)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--babel-cmd-detach-managed-policy (role-name policy-arn)
+  "Return the AWS CLI command to detach a managed policy.
+ROLE-NAME is the IAM role name.  POLICY-ARN is the ARN of the managed policy."
+  (format "aws iam detach-role-policy --role-name %s --policy-arn %s%s"
+          (shell-quote-argument role-name)
+          (shell-quote-argument policy-arn)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-aws-iam-role--babel-cmd-delete-policy (policy-arn)
+  "Return the AWS CLI command to delete a managed policy.
+POLICY-ARN is the ARN of the managed policy."
+  (format "aws iam delete-policy --policy-arn %s%s"
+          (shell-quote-argument policy-arn)
+          (org-aws-iam-role--cli-profile-arg)))
+
+(defun org-babel-execute:aws-iam (body params)
+  "Execute an `aws-iam' source block.
+BODY with header PARAMS to manage IAM policies.
+PARAMS should include header arguments such as :ROLE-NAME, :POLICY-NAME,
+:ARN, and :POLICY-TYPE."
+  (when buffer-read-only
+    (user-error "Buffer is read-only. Press C-c C-e to enable edits and execution"))
+
+  (let* ((role-name (cdr (assoc :role-name params)))
+         (policy-name (cdr (assoc :policy-name params)))
+         (policy-arn (cdr (assoc :arn params)))
+         (policy-type-str (cdr (assoc :policy-type params)))
+         (policy-type (when policy-type-str (intern policy-type-str)))
+         (create-p (org-aws-iam-role--param-true-p (cdr (assoc :create params))))
+         (delete-p (org-aws-iam-role--param-true-p (cdr (assoc :delete params))))
+         (detach-p (org-aws-iam-role--param-true-p (cdr (assoc :detach params))))
+         cmd action-desc)
+
+    (unless (and (or role-name create-p) policy-type)
+      (user-error "Missing required header arguments: :ROLE-NAME or :POLICY-TYPE"))
+
+    (cond
+     ;; --- DELETE ACTION ---
+     (delete-p
+      (cond
+       ((eq policy-type 'inline)
+        (setq action-desc (format "Permanently delete inline policy '%s' from role '%s'" policy-name role-name))
+        (setq cmd (org-aws-iam-role--babel-cmd-delete-inline-policy role-name policy-name)))
+       ((eq policy-type 'customer-managed)
+        (setq action-desc (format "Permanently delete managed policy '%s'? (This will fail if it's still attached to any entity)" policy-arn))
+        (setq cmd (org-aws-iam-role--babel-cmd-delete-policy policy-arn)))
+       (t (user-error "Deletion is only supported for 'inline' and 'customer-managed' policies"))))
+
+     ;; --- DETACH ACTION ---
+     (detach-p
+      (when (eq policy-type 'inline)
+        (user-error "Cannot detach an 'inline' policy. Use :delete instead"))
+      (setq action-desc (format "Detach policy '%s' from role '%s'" (or policy-name policy-arn) role-name))
+      (setq cmd (org-aws-iam-role--babel-cmd-detach-managed-policy role-name policy-arn)))
+
+     ;; --- CREATE ACTION ---
+     (create-p
+      (if (eq policy-type 'customer-managed)
+          (let ((json-string (json-encode (json-read-from-string body))))
+            (setq action-desc (format "Create new customer managed policy '%s'" policy-name))
+            (setq cmd (org-aws-iam-role--babel-cmd-create-policy policy-name json-string)))
+        (user-error "The :CREATE flag is only for 'customer-managed' policies. For inline policies, execute without it")))
+
+     ;; --- DEFAULT: UPDATE/CREATE INLINE ACTION ---
+     (t
+      (let ((json-string (json-encode (json-read-from-string body))))
+        (setq action-desc (format "Update %s for role '%s'"
+                                  (if (eq policy-type 'trust-policy) "Trust Policy" (format "policy '%s'" policy-name))
+                                  role-name))
+        (setq cmd
+              (cond
+               ((eq policy-type 'trust-policy)
+                (org-aws-iam-role--babel-cmd-for-trust-policy role-name json-string))
+               ((eq policy-type 'inline)
+                (org-aws-iam-role--babel-cmd-for-inline-policy role-name policy-name json-string))
+               ((or (eq policy-type 'customer-managed)
+                    (eq policy-type 'aws-managed)
+                    (eq policy-type 'permissions-boundary))
+                (org-aws-iam-role--babel-cmd-for-managed-policy policy-arn json-string))
+               (t (user-error "Unsupported policy type for modification: %s" policy-type)))))))
+
+    (if (y-or-n-p (format "%s?" action-desc))
+        (progn
+          (message "Executing: %s" action-desc)
+          (let ((result (string-trim (shell-command-to-string cmd))))
+            (if (string-empty-p result)
+                "Success!"
+              result)))
+      (user-error "Aborted by user"))))
+;;iam babel code end ;;
+
 (provide 'org-aws-iam-role)
 ;;; org-aws-iam-role.el ends here
