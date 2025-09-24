@@ -21,10 +21,10 @@
 (require 'json)
 (require 'org-aws-iam-role)
 
-(defvar org-aws-iam-role--last-simulate-result nil
+(defvar-local org-aws-iam-role--last-simulate-result nil
   "Holds the raw JSON string from the last IAM simulate-principal-policy run.")
 
-(defvar org-aws-iam-role--last-simulate-role nil
+(defvar-local org-aws-iam-role--last-simulate-role nil
   "Holds the last IAM Role ARN used for simulate-principal-policy.")
 
 (defun org-aws-iam-role-simulate-from-buffer ()
@@ -74,9 +74,16 @@
                       (alist-get 'EvaluationResults
                                  (json-parse-string json :object-type 'alist :array-type 'list))
                     (error nil))))
-    (setq org-aws-iam-role--last-simulate-role role-arn)
-    (setq org-aws-iam-role--last-simulate-result json)
-    (org-aws-iam-role-show-simulation-result results)))
+    ;; Create result buffer and save locals there
+    (let* ((role-name (car (last (split-string role-arn "/"))))
+           (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+           (buf (get-buffer-create
+                 (format "*IAM Simulation: %s <%s>*" role-name timestamp))))
+      (with-current-buffer buf
+        (setq-local org-aws-iam-role--last-simulate-role role-arn)
+        (setq-local org-aws-iam-role--last-simulate-result json))
+      (org-aws-iam-role-show-simulation-result results))))
+
 
 (defun org-aws-iam-role-show-simulation-result (results-list &optional raw-json)
   "Display the detailed results of a policy simulation in a new buffer."
@@ -116,26 +123,34 @@
 (defun org-aws-iam-role-show-raw-json ()
   "Show the raw JSON from the last IAM simulation."
   (interactive)
-  (if (not (and org-aws-iam-role--last-simulate-result
-                (stringp org-aws-iam-role--last-simulate-result)
-                (not (string-empty-p org-aws-iam-role--last-simulate-result))))
-      (user-error "No JSON stored from last simulation")
-    (let* ((role-name (if org-aws-iam-role--last-simulate-role
-                          (car (last (split-string org-aws-iam-role--last-simulate-role "/")))
-                        "unknown-role"))
-           (timestamp (format-time-string "%Y%m%d-%H%M%S"))
-           (buf-name (format "*IAM Simulate JSON: %s <%s>*" role-name timestamp))
-           (buf (get-buffer-create buf-name)))
-      (with-current-buffer buf
-        (erase-buffer)
-        (insert org-aws-iam-role--last-simulate-result)
-        (condition-case nil
-            (json-pretty-print-buffer)
-          (error (message "Warning: could not pretty-print JSON")))
-        (goto-char (point-min))
-        (when (fboundp 'json-mode)
-          (json-mode)))
-      (pop-to-buffer buf))))
+  (let* ((sim-buf (cl-find-if
+                   (lambda (b)
+                     (with-current-buffer b
+                       (bound-and-true-p org-aws-iam-role--last-simulate-result)))
+                   (buffer-list)))
+         (json (and sim-buf
+                    (buffer-local-value 'org-aws-iam-role--last-simulate-result sim-buf)))
+         (role-arn (and sim-buf
+                        (buffer-local-value 'org-aws-iam-role--last-simulate-role sim-buf))))
+    (if (not (and json (stringp json) (not (string-empty-p json))))
+        (user-error "No JSON stored from last simulation")
+      (let* ((role-name (if role-arn
+                            (car (last (split-string role-arn "/")))
+                          "unknown-role"))
+             (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+             (buf (get-buffer-create
+                   (format "*IAM Simulate JSON: %s <%s>*" role-name timestamp))))
+        (with-current-buffer buf
+          (erase-buffer)
+          (insert json)
+          (condition-case nil
+              (json-pretty-print-buffer)
+            (error (message "Warning: could not pretty-print JSON")))
+          (goto-char (point-min))
+          (when (fboundp 'json-mode)
+            (json-mode)))
+        (pop-to-buffer buf)))))
+
 
 (defun org-aws-iam-role-insert-one-simulation-result (result-item)
   "Parse and insert the formatted details for a single simulation RESULT-ITEM."
