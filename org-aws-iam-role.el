@@ -7,8 +7,7 @@
 ;; Created: August 16, 2025
 ;; Version: 1.2.0
 ;; Package-Version: 1.2.0
-;; Package-Requires: ((emacs "29.1"))
-;; Keywords: aws, iam, org, babel, tools
+;; Package-Requires: ((emacs "29.1") (org "9.6") (async "1.9") (promise "1.1"));; Keywords: aws, iam, org, babel, tools
 ;; URL: https://github.com/will-abb/org-aws-iam-role
 ;; Homepage: https://github.com/will-abb/org-aws-iam-role
 ;; SPDX-License-Identifier: GPL-3.0-or-later
