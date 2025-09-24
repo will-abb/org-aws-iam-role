@@ -59,11 +59,6 @@
 (require 'ob-shell)
 (require 'org)
 
-;; Load the separated modules for Babel and Simulation
-(require 'ob-aws-iam)
-(require 'org-aws-iam-role-simulate)
-
-;; Register the custom `aws-iam` language with Org Babel
 (add-to-list 'org-babel-load-languages '(aws-iam . t))
 (add-to-list 'org-src-lang-modes '(("aws-iam" . json)
                                    ("json" . json)))
@@ -80,6 +75,12 @@ If nil, uses default profile or environment credentials.")
 
 (defvar org-aws-iam-role-read-only-by-default t
   "If non-nil, role viewer buffers will be read-only by default.")
+
+(defvar-local org-aws-iam-role-simulate--last-result nil
+  "Hold the raw JSON string from the last IAM simulate-principal-policy run.")
+
+(defvar-local org-aws-iam-role-simulate--last-role nil
+  "Hold the last IAM Role ARN used for simulate-principal-policy.")
 
 ;;;###autoload
 (cl-defun org-aws-iam-role-view-details (&optional role-name)
@@ -612,12 +613,6 @@ information."
     (org-aws-iam-role-populate-role-buffer role buf)))
 
 ;; simulation code start ;;
-(defvar-local org-aws-iam-role-simulate--last-result nil
-  "Hold the raw JSON string from the last IAM simulate-principal-policy run.")
-
-(defvar-local org-aws-iam-role-simulate--last-role nil
-  "Hold the last IAM Role ARN used for simulate-principal-policy.")
-
 (defun org-aws-iam-role-simulate-from-buffer ()
   "Run a policy simulation using the ARN from the current role buffer."
   (interactive)
