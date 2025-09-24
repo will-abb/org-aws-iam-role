@@ -7,7 +7,6 @@
 ;; Created: August 16, 2025
 ;; Version: 1.2.0
 ;; Package-Version: 1.2.0
-;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: aws, iam, org, babel, tools
 ;; URL: https://github.com/will-abb/org-aws-iam-role
 ;; Homepage: https://github.com/will-abb/org-aws-iam-role
@@ -43,10 +42,10 @@
 ;; - Integration with Org Babel execution via `org-babel-execute:aws-iam`.
 ;; - Safety prompts before destructive actions such as delete/detach.
 
+
 ;;; Code:
 
 (require 'json)
-(require 'org-aws-iam-role)
 
 (defun org-aws-iam-role--babel-cmd-for-trust-policy (role-name policy-document)
   "Return the AWS CLI command to update a trust policy for ROLE-NAME.

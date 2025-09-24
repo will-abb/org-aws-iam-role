@@ -7,7 +7,6 @@
 ;; Created: August 16, 2025
 ;; Version: 1.2.0
 ;; Package-Version: 1.2.0
-;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: aws, iam, org, babel, tools
 ;; URL: https://github.com/will-abb/org-aws-iam-role
 ;; Homepage: https://github.com/will-abb/org-aws-iam-role
@@ -46,7 +45,6 @@
 ;;; Code:
 
 (require 'json)
-(require 'org-aws-iam-role)
 
 (defvar-local org-aws-iam-role-simulate--last-result nil
   "Hold the raw JSON string from the last IAM simulate-principal-policy run.")
@@ -227,7 +225,7 @@
       :org-allowed ,(if org-detail (alist-get 'AllowedByOrganizations org-detail) nil)
       :policy-ids-str ,(mapconcat #'identity policy-ids ", ")
       :missing-context-str ,(if missing-context (mapconcat 'identity missing-context ", ") "None")
-      :decision-face ,(if (string= decision "allowed") 'success 'error))))
+      :decision-face ,(if (string= decision "allowed") #'success #'error))))
 
 (defun org-aws-iam-role-simulate--insert-warning ()
   "Insert the standard simulation warning into the current buffer."
