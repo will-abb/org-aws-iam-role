@@ -61,7 +61,7 @@
   (let ((test-role-name "test-iam-packageIamRole")
         (org-aws-iam-role-profile "williseed-iam-tester")
         (golden-file (expand-file-name
-                      "fixtures/integration-e2e-test-output.org"
+                      "tests/fixtures/integration-e2e-test-output.org"
                       (file-name-directory (or load-file-name buffer-file-name)))))
     (should (file-exists-p golden-file))
 
