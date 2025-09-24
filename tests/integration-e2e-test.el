@@ -61,8 +61,11 @@
   (let ((test-role-name "test-iam-packageIamRole")
         (org-aws-iam-role-profile "williseed-iam-tester")
         (golden-file (expand-file-name
-                      "tests/fixtures/integration-e2e-test-output.org"
-                      (file-name-directory (or load-file-name buffer-file-name)))))
+                      "fixtures/integration-e2e-test-output.org"
+                      (or (and load-file-name (file-name-directory load-file-name))
+                          (and buffer-file-name (file-name-directory buffer-file-name))
+                          default-directory))))
+
     (should (file-exists-p golden-file))
 
     ;; Call the main entry point to create the buffer.
