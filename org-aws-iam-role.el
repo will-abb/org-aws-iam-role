@@ -69,6 +69,8 @@
 (require 'promise)
 (require 'ob-shell)
 (require 'org)
+(require 'org-element)
+
 
 (add-to-list 'org-babel-load-languages '(shell . t))
 (add-to-list 'org-src-lang-modes '("aws-iam" . json))
@@ -987,6 +989,94 @@ PARAMS should include header arguments such as :ROLE-NAME, :POLICY-NAME,
      (detach-p (org-aws-iam-role--babel-handle-detach role-name policy-name policy-arn policy-type))
      (create-p (org-aws-iam-role--babel-handle-create policy-name policy-type body))
      (t (org-aws-iam-role--babel-handle-update role-name policy-name policy-arn policy-type body)))))
+
+
+;;;;; unified json start ;;;;;
+
+(defun org-aws-iam-role--get-role-name-from-buffer ()
+  "Extract the role name from the main headline of the buffer."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward "^\\* IAM Role: \\(.*\\)$" nil t)
+      (match-string 1))))
+
+(defun org-aws-iam-role--sanitize-for-sid (s)
+  "Sanitize string S for use as an IAM Policy Sid.
+Removes all non-alphanumeric characters."
+  (when s
+    (replace-regexp-in-string "[^a-zA-Z0-9]" "" s)))
+
+(defun org-aws-iam-role--extract-all-permission-statements ()
+  "Parse the current buffer to find and extract all permission policy statements.
+This function uses a state machine to iterate through headlines,
+finds the 'Permission Policies' section, and processes the JSON
+in each sub-section's source block. It returns a list of all
+processed statement alists."
+  (let ((all-statements '())
+        (tree (org-element-parse-buffer))
+        (in-permissions-section nil))
+    (org-element-map tree 'headline
+      (lambda (hl)
+        (let ((level (org-element-property :level hl))
+              (title (org-element-property :raw-value hl)))
+          (cond
+           ;; Case 1: Start of section
+           ((and (= level 2) (string= "Permission Policies" title))
+            (setq in-permissions-section t))
+           ;; Case 2: End of section
+           ((and in-permissions-section (= level 2))
+            (setq in-permissions-section nil))
+           ;; Case 3: Inside section, process policy
+           ((and in-permissions-section (= level 3))
+            (let* ((policy-name title)
+                   (sid (org-aws-iam-role--sanitize-for-sid policy-name))
+                   (src-block (car (org-element-map (org-element-contents hl) 'src-block #'identity))))
+              (when src-block
+                (let* ((json-string (org-element-property :value src-block))
+                       (policy-data (json-parse-string json-string :object-type 'alist :array-type 'list))
+                       (statements (alist-get 'Statement policy-data)))
+                  (when statements
+                    (dolist (stmt statements)
+                      (let* ((stmt-no-sid (cl-remove 'Sid stmt :key #'car))
+                             (modified-stmt (cons (cons 'Sid sid) stmt-no-sid)))
+                        (push modified-stmt all-statements))))))))))))
+    (nreverse all-statements)))
+
+(defun org-aws-iam-role--create-and-show-json-buffer (statements role-name)
+  "Create and display a new buffer with the combined JSON policy from STATEMENTS.
+ROLE-NAME is used for the buffer title."
+  (let* ((final-policy `((Version . "2012-10-17")
+                         (Statement . ,statements)))
+         (json-string (json-encode final-policy))
+         (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+         (buf-name (format "*IAM Combined Permissions: %s <%s>*" (or role-name "current-role") timestamp))
+         (buf (get-buffer-create buf-name)))
+    (with-current-buffer buf
+      (erase-buffer)
+      (insert json-string)
+      (condition-case nil
+          (json-pretty-print-buffer)
+        (error (message "Warning: could not pretty-print JSON")))
+      (goto-char (point-min))
+      (when (fboundp 'json-mode)
+        (json-mode)))
+    (pop-to-buffer buf)))
+
+;;;###autoload
+(defun org-aws-iam-role-combine-permissions-from-buffer ()
+  "Parse the current Org IAM Role buffer to create a combined JSON policy.
+This function acts as an orchestrator, calling helper functions
+to extract policy statements and display them in a new buffer."
+  (interactive)
+  (unless (eq major-mode 'org-mode)
+    (user-error "This command must be run from an Org mode buffer."))
+
+  (let ((all-statements (org-aws-iam-role--extract-all-permission-statements)))
+    (if (null all-statements)
+        (message "No policy statements were found under '** Permission Policies'.")
+      (let ((role-name (org-aws-iam-role--get-role-name-from-buffer)))
+        (org-aws-iam-role--create-and-show-json-buffer all-statements role-name)))))
+
 
 (provide 'org-aws-iam-role)
 ;;; org-aws-iam-role.el ends here
